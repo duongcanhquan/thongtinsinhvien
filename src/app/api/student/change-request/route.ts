@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getStudentSession } from "@/lib/session";
 import { DOCUMENT_KEYS, STUDENT_EDITABLE_FIELDS } from "@/lib/student-fields";
 import { getStudent, saveChangeRequest } from "@/lib/students-repo";
-import type { ChangeRequest, DocumentSlot } from "@/lib/types";
+import type { ChangeRequest, DocumentSlot, Student } from "@/lib/types";
 
 export async function POST(req: Request) {
   try {
@@ -17,6 +17,7 @@ export async function POST(req: Request) {
     }
 
     const body = (await req.json()) as {
+      intent?: "edit" | "confirm";
       proposedFields?: Record<string, unknown>;
       proposedDocuments?: Record<string, DocumentSlot>;
     };
@@ -44,10 +45,23 @@ export async function POST(req: Request) {
       }
     }
 
+    const hasFieldDiff = hasFieldChanges(student, proposedFields);
+    const hasDocDiff = hasDocumentChanges(student, proposedDocuments);
+    const hasChanges = hasFieldDiff || hasDocDiff;
+
+    // Nếu bấm "xác nhận đúng" nhưng form đã lệch bản gốc → vẫn coi là yêu cầu chỉnh sửa
+    const intent: ChangeRequest["intent"] =
+      body.intent === "confirm" && !hasChanges ? "confirm" : "edit";
+
+    if (intent === "edit" && !hasChanges && body.intent === "edit") {
+      // vẫn cho gửi (overwrite pending) — admin thấy SV gửi lại
+    }
+
     const now = new Date().toISOString();
     const request: ChangeRequest = {
       maSinhVien: session.maSinhVien,
       status: "pending",
+      intent,
       proposedFields,
       proposedDocuments,
       createdAt: now,
@@ -55,9 +69,38 @@ export async function POST(req: Request) {
     };
 
     await saveChangeRequest(request);
-    return NextResponse.json({ ok: true, request });
+    return NextResponse.json({ ok: true, request, intent, hasChanges });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Lỗi máy chủ";
     return NextResponse.json({ error: message }, { status: 500 });
   }
+}
+
+function hasFieldChanges(
+  student: Student,
+  proposed: ChangeRequest["proposedFields"]
+) {
+  for (const key of STUDENT_EDITABLE_FIELDS) {
+    if (!(key in (proposed || {}))) continue;
+    const next = String((proposed as Record<string, unknown>)[key] ?? "");
+    const prev = String((student as Record<string, unknown>)[key] ?? "");
+    if (next !== prev) return true;
+  }
+  return false;
+}
+
+function hasDocumentChanges(
+  student: Student,
+  proposed: Record<string, DocumentSlot>
+) {
+  for (const [key, slot] of Object.entries(proposed || {})) {
+    if (!DOCUMENT_KEYS.has(key)) continue;
+    const current = student.documents?.[key];
+    const currKeys = (current?.files || []).map((f) => f.key).join("|");
+    const nextKeys = (slot.files || []).map((f) => f.key).join("|");
+    if (currKeys !== nextKeys) return true;
+    if ((slot.status || "") !== (current?.status || "")) return true;
+    if ((slot.note || "") !== (current?.note || "")) return true;
+  }
+  return false;
 }

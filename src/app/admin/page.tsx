@@ -276,7 +276,8 @@ export default function AdminPage() {
                 >
                   <span className="font-mono text-sm">{r.maSinhVien}</span>
                   <span className="mt-1 block text-xs text-foreground/50">
-                    Cập nhật: {new Date(r.updatedAt).toLocaleString("vi-VN")}
+                    {r.intent === "confirm" ? "Xác nhận đúng" : "Yêu cầu chỉnh sửa"} ·{" "}
+                    {new Date(r.updatedAt).toLocaleString("vi-VN")}
                   </span>
                 </button>
               ))

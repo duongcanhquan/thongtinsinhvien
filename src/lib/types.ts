@@ -74,6 +74,8 @@ export type ChangeRequestStatus = "pending" | "approved" | "rejected";
 export type ChangeRequest = {
   maSinhVien: string;
   status: ChangeRequestStatus;
+  /** edit = có chỉnh sửa; confirm = SV xác nhận hồ sơ đúng */
+  intent?: "edit" | "confirm";
   proposedFields: Partial<Omit<Student, "maSinhVien" | "documents" | "createdAt" | "importedAt">>;
   proposedDocuments: Record<string, DocumentSlot>;
   adminNote?: string;

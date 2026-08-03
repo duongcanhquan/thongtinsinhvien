@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { buildObjectKey, createUploadUrl } from "@/lib/r2";
+import { buildObjectKey, createUploadUrl, guessContentType } from "@/lib/r2";
 import { getStudentSession, getAdminSession } from "@/lib/session";
 import { DOCUMENT_KEYS } from "@/lib/student-fields";
 
@@ -19,11 +19,9 @@ export async function POST(req: Request) {
       size?: number;
     };
 
-    const maSinhVien = admin
-      ? body.maSinhVien
-      : student?.maSinhVien;
+    const maSinhVien = admin ? body.maSinhVien : student?.maSinhVien;
 
-    if (!maSinhVien || !body.fieldKey || !body.filename || !body.contentType || !body.size) {
+    if (!maSinhVien || !body.fieldKey || !body.filename || !body.size) {
       return NextResponse.json({ error: "Thiếu tham số upload" }, { status: 400 });
     }
 
@@ -36,17 +34,19 @@ export async function POST(req: Request) {
     }
 
     const key = buildObjectKey(maSinhVien, body.fieldKey, body.filename);
+    const contentType = guessContentType(body.filename, body.contentType || "");
     const signed = await createUploadUrl({
       key,
-      contentType: body.contentType,
+      contentType,
       size: body.size,
     });
 
     return NextResponse.json({
-      ...signed,
+      url: signed.url,
+      key: signed.key,
       name: body.filename,
       size: body.size,
-      contentType: body.contentType,
+      contentType: signed.contentType,
       uploadedAt: new Date().toISOString(),
     });
   } catch (e) {

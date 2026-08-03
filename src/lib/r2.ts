@@ -17,12 +17,35 @@ const ALLOWED_TYPES = new Set([
 ]);
 
 export function assertUploadMeta(contentType: string, size: number) {
-  if (!ALLOWED_TYPES.has(contentType)) {
+  const type = normalizeContentType(contentType);
+  if (!ALLOWED_TYPES.has(type) && type !== "application/octet-stream") {
     throw new Error("Chỉ chấp nhận PDF hoặc ảnh");
   }
   if (size <= 0 || size > MAX_BYTES) {
     throw new Error("Mỗi file tối đa 15MB");
   }
+  return type;
+}
+
+function normalizeContentType(contentType: string) {
+  return (contentType || "").split(";")[0]?.trim().toLowerCase() || "";
+}
+
+export function guessContentType(filename: string, fallback = ""): string {
+  const known = normalizeContentType(fallback);
+  if (ALLOWED_TYPES.has(known)) return known;
+  const ext = filename.split(".").pop()?.toLowerCase() || "";
+  const map: Record<string, string> = {
+    pdf: "application/pdf",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    webp: "image/webp",
+    gif: "image/gif",
+    heic: "image/heic",
+    heif: "image/heif",
+  };
+  return map[ext] || "application/octet-stream";
 }
 
 function getR2() {
@@ -49,16 +72,18 @@ export async function createUploadUrl(params: {
   contentType: string;
   size: number;
 }) {
-  assertUploadMeta(params.contentType, params.size);
+  const contentType = assertUploadMeta(params.contentType, params.size);
+  if (contentType === "application/octet-stream") {
+    throw new Error("Chỉ chấp nhận PDF hoặc ảnh");
+  }
   const { client, bucket } = getR2();
   const command = new PutObjectCommand({
     Bucket: bucket,
     Key: params.key,
-    ContentType: params.contentType,
-    ContentLength: params.size,
+    ContentType: contentType,
   });
   const url = await getSignedUrl(client, command, { expiresIn: 60 * 5 });
-  return { url, key: params.key };
+  return { url, key: params.key, contentType };
 }
 
 export async function createDownloadUrl(key: string) {
