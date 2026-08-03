@@ -12,6 +12,8 @@ export type DocumentSlot = {
   status: DocumentStatus;
   files: UploadedFile[];
   note?: string;
+  /** Link Drive / URL ngoài (từ Excel hyperlink cột ẢNH) */
+  externalUrl?: string;
 };
 
 /** Official student record (Firestore students/{maSinhVien}) */

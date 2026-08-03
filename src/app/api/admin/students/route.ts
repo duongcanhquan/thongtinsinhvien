@@ -103,6 +103,9 @@ export async function POST(req: Request) {
           files,
         };
         if (slot.note) entry.note = String(slot.note);
+        if (slot.externalUrl) {
+          entry.externalUrl = String(slot.externalUrl).slice(0, 2000);
+        }
         student.documents[key] = entry;
       }
     }

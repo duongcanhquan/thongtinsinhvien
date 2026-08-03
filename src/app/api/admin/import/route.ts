@@ -2,10 +2,13 @@ import { NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 import { getAdminSession } from "@/lib/session";
 import {
+  DOCUMENT_KEYS,
   EXCEL_COLUMN_MAP,
   cellToString,
+  extractHttpUrl,
 } from "@/lib/student-fields";
 import {
+  getStudent,
   studentExists,
   studentFromFields,
   upsertStudent,
@@ -34,7 +37,6 @@ export async function POST(req: Request) {
     }
 
     const sheet = workbook.Sheets[sheetName];
-    // header: 1 → array of arrays; data starts at Excel row 3 → index 2
     const rows = XLSX.utils.sheet_to_json<(string | number | Date | null)[]>(sheet, {
       header: 1,
       defval: "",
@@ -48,9 +50,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // Use row 2 (index 1) or row 1 as header if it looks like headers; prefer first non-empty header row among first 2
     const headerRow = pickHeaderRow(rows);
-    const headerIndex = rows.indexOf(headerRow);
     const colKeys = headerRow.map((h) => {
       const label = cellToString(h);
       return EXCEL_COLUMN_MAP[label] || null;
@@ -58,20 +58,25 @@ export async function POST(req: Request) {
 
     let added = 0;
     let skipped = 0;
+    let linksUpdated = 0;
     const errors: string[] = [];
 
     for (let r = 2; r < rows.length; r++) {
-      // Always start data at Excel row 3 (index 2), even if header detection differed
       const row = rows[r];
       if (!row || row.every((c) => cellToString(c) === "")) continue;
 
       const fields: Record<string, string> = {};
+      const externalUrls: Record<string, string> = {};
+
       colKeys.forEach((key, idx) => {
         if (!key) return;
         fields[key] = cellToString(row[idx]);
+        if (!DOCUMENT_KEYS.has(key)) return;
+        const href = cellHyperlink(sheet, r, idx);
+        if (href) externalUrls[key] = href;
       });
 
-      const student = studentFromFields(fields);
+      const student = studentFromFields(fields, externalUrls);
       if (!student) {
         errors.push(`Dòng ${r + 1}: thiếu mã sinh viên`);
         continue;
@@ -79,6 +84,35 @@ export async function POST(req: Request) {
 
       if (await studentExists(student.maSinhVien)) {
         skipped += 1;
+        // Bổ sung / cập nhật link Drive ảnh cho hồ sơ đã có (không đụng field khác)
+        const photoUrl = extractHttpUrl(student.documents?.anh?.externalUrl);
+        if (photoUrl) {
+          const existing = await getStudent(student.maSinhVien);
+          if (existing) {
+            const prev = existing.documents?.anh || {
+              status: "thieu" as const,
+              files: [],
+            };
+            if (prev.externalUrl !== photoUrl) {
+              const note =
+                cellToString(student.documents?.anh?.note) ||
+                cellToString(prev.note);
+              existing.documents = {
+                ...(existing.documents || {}),
+                anh: {
+                  ...prev,
+                  status: prev.status === "thieu" ? "du" : prev.status,
+                  externalUrl: photoUrl,
+                  ...(note ? { note } : {}),
+                  files: prev.files || [],
+                },
+              };
+              existing.updatedAt = new Date().toISOString();
+              await upsertStudent(existing);
+              linksUpdated += 1;
+            }
+          }
+        }
         continue;
       }
 
@@ -90,8 +124,13 @@ export async function POST(req: Request) {
       added += 1;
     }
 
-    void headerIndex;
-    return NextResponse.json({ ok: true, added, skipped, errors });
+    return NextResponse.json({
+      ok: true,
+      added,
+      skipped,
+      linksUpdated,
+      errors,
+    });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Lỗi máy chủ";
     return NextResponse.json({ error: message }, { status: 500 });
@@ -107,4 +146,20 @@ function pickHeaderRow(
     if (hits >= 3) return row;
   }
   return rows[1] || rows[0] || [];
+}
+
+/** Đọc hyperlink Excel (vd. Drive) tại dòng/cột 0-based. */
+function cellHyperlink(
+  sheet: XLSX.WorkSheet,
+  rowIndex: number,
+  colIndex: number
+): string {
+  const addr = XLSX.utils.encode_cell({ r: rowIndex, c: colIndex });
+  const cell = sheet[addr] as XLSX.CellObject | undefined;
+  if (!cell?.l) return "";
+  const target =
+    typeof cell.l === "object" && cell.l && "Target" in cell.l
+      ? String((cell.l as { Target?: string }).Target || "")
+      : "";
+  return extractHttpUrl(target);
 }

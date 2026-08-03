@@ -6,6 +6,7 @@ import {
   STUDENT_EDITABLE_FIELDS,
   birthDateError,
   digitsPhone10,
+  isStudentUploadableDocument,
   normalizeBirthDate,
   phoneError,
 } from "@/lib/student-fields";
@@ -82,6 +83,9 @@ export async function POST(req: Request) {
     if (body.proposedDocuments) {
       for (const [key, slot] of Object.entries(body.proposedDocuments)) {
         if (!DOCUMENT_KEYS.has(key)) continue;
+
+        // Sinh viên chỉ được gửi thay đổi file ảnh; giấy tờ khác nộp bản cứng
+        if (!isStudentUploadableDocument(key)) continue;
 
         // Mục Đủ: sinh viên không được tự đổi / upload — chỉ admin
         if (student.documents?.[key]?.status === "du") {

@@ -15,6 +15,7 @@ import {
   FIELD_LABELS,
   STUDENT_EDITABLE_FIELDS,
   birthDateFromParts,
+  isStudentUploadableDocument,
   isValidBirthDate,
   normalizeBirthDate,
 } from "@/lib/student-fields";
@@ -85,6 +86,7 @@ export default function HoSoPage() {
       if (next !== prev) return true;
     }
     for (const key of Object.keys(DOCUMENT_LABELS)) {
+      if (!isStudentUploadableDocument(key)) continue;
       const curr = student.documents?.[key];
       const next = documents[key];
       const currKeys = (curr?.files || []).map((f) => f.key).join("|");
@@ -152,6 +154,13 @@ export default function HoSoPage() {
 
   async function uploadFiles(fieldKey: string, fileList: FileList | null) {
     if (!fileList?.length || !student) return;
+
+    if (!isStudentUploadableDocument(fieldKey)) {
+      setError(
+        "Giấy tờ này nộp bản cứng cho giáo viên chủ nhiệm — không upload trên hệ thống."
+      );
+      return;
+    }
 
     const official = student.documents?.[fieldKey];
     const officialStatus = official?.status || "thieu";
@@ -402,10 +411,12 @@ export default function HoSoPage() {
             </h2>
             <p className="mt-1 text-sm text-foreground/60">
               <span className="font-semibold text-emerald-700">Xanh = Đủ</span>{" "}
-              (không cần nộp thêm).{" "}
-              <span className="font-semibold text-destructive">Đỏ = Thiếu</span>{" "}
-              — bấm <strong>Bổ sung</strong> để tải file. Tối đa 2 file/trường,
-              PDF hoặc ảnh ≤ 15MB. File mới chỉ chính thức sau khi admin duyệt.
+              (không cần nộp thêm). Chỉ{" "}
+              <strong>ẢNH / Ảnh thẻ</strong> được tải lên hệ thống khi thiếu.
+              Nếu Excel đã có link Drive, bấm{" "}
+              <strong>Xem ảnh</strong> để mở. Các giấy tờ khác: nộp{" "}
+              <span className="font-semibold text-destructive">bản cứng</span>{" "}
+              cho giáo viên chủ nhiệm.
             </p>
             <div className="mt-4 space-y-3">
               {Object.entries(DOCUMENT_LABELS).map(([key, label]) => {
@@ -413,6 +424,8 @@ export default function HoSoPage() {
                 const officialStatus = officialSlot?.status || "thieu";
                 const isDu = officialStatus === "du";
                 const isThieu = officialStatus === "thieu";
+                const canUploadPhoto =
+                  isStudentUploadableDocument(key) && !isDu;
                 const slot = documents[key] || {
                   status: "thieu" as const,
                   files: [],
@@ -423,7 +436,6 @@ export default function HoSoPage() {
                   (f) => !officialKeys.has(f.key)
                 );
                 const busy = uploadingKey === key;
-                const canUpload = !isDu;
                 return (
                   <div
                     key={key}
@@ -438,15 +450,22 @@ export default function HoSoPage() {
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
                         <p className="font-semibold">{label}</p>
-                        <StatusBadge status={officialStatus} />
+                        <StatusBadge
+                          status={officialStatus}
+                          hardCopy={!isStudentUploadableDocument(key)}
+                        />
                       </div>
-                      {canUpload ? (
+                      {isDu ? (
+                        <span className="inline-flex min-h-11 items-center rounded-xl bg-emerald-600 px-3 text-sm font-bold text-white">
+                          Đã đủ
+                        </span>
+                      ) : canUploadPhoto ? (
                         <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl bg-accent px-3 text-sm font-semibold text-white disabled:opacity-50">
                           <FileArrowUp size={18} />
                           {busy ? "Đang tải…" : "Bổ sung"}
                           <input
                             type="file"
-                            accept="application/pdf,image/*,.pdf,.jpg,.jpeg,.png,.webp,.gif,.heic,.heif"
+                            accept="image/*,.jpg,.jpeg,.png,.webp,.gif,.heic,.heif"
                             multiple
                             disabled={busy || saving}
                             className="sr-only"
@@ -456,12 +475,27 @@ export default function HoSoPage() {
                             }}
                           />
                         </label>
-                      ) : (
-                        <span className="inline-flex min-h-11 items-center rounded-xl bg-emerald-600 px-3 text-sm font-bold text-white">
-                          Đã đủ
-                        </span>
-                      )}
+                      ) : null}
                     </div>
+                    {!isDu && !isStudentUploadableDocument(key) ? (
+                      <p
+                        className="mt-3 rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-2.5 text-center text-sm font-extrabold uppercase tracking-wide text-destructive"
+                        role="status"
+                      >
+                        Bổ sung bản cứng cho giáo viên chủ nhiệm
+                      </p>
+                    ) : null}
+                    {officialSlot?.externalUrl ? (
+                      <a
+                        href={officialSlot.externalUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border-2 border-primary/25 bg-primary/5 px-3 text-sm font-bold text-primary transition hover:bg-primary/10 sm:w-auto"
+                      >
+                        Xem ảnh
+                        {officialSlot.note ? ` (${officialSlot.note})` : " trên Drive"}
+                      </a>
+                    ) : null}
                     {pendingFiles.length ? (
                       <ul className="mt-2 space-y-1 text-sm">
                         {pendingFiles.map((f) => (
@@ -570,7 +604,13 @@ async function downloadFile(key: string) {
   window.open(data.url, "_blank", "noopener,noreferrer");
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({
+  status,
+  hardCopy,
+}: {
+  status: string;
+  hardCopy?: boolean;
+}) {
   if (status === "du") {
     return (
       <span className="mt-1 inline-flex items-center rounded-full bg-emerald-600 px-2.5 py-0.5 text-xs font-bold text-white">
@@ -587,7 +627,7 @@ function StatusBadge({ status }: { status: string }) {
   }
   return (
     <span className="mt-1 inline-flex items-center rounded-full bg-destructive px-2.5 py-0.5 text-xs font-bold text-white">
-      Thiếu — cần bổ sung
+      {hardCopy ? "Thiếu — nộp bản cứng" : "Thiếu — cần bổ sung ảnh"}
     </span>
   );
 }

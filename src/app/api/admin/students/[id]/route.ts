@@ -67,6 +67,11 @@ export async function PATCH(req: Request, { params }: Params) {
           files,
         };
         if (slot.note) entry.note = String(slot.note);
+        const url = String(slot.externalUrl || "").trim();
+        if (url) entry.externalUrl = url.slice(0, 2000);
+        else if (student.documents?.[key]?.externalUrl && !("externalUrl" in slot)) {
+          entry.externalUrl = student.documents[key].externalUrl;
+        }
         next.documents[key] = entry;
       }
     }

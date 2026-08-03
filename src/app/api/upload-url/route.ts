@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { buildObjectKey, createUploadUrl, guessContentType } from "@/lib/r2";
 import { getClientIp, rateLimit } from "@/lib/rate-limit";
 import { getStudentSession, getAdminSession } from "@/lib/session";
-import { DOCUMENT_KEYS } from "@/lib/student-fields";
+import { DOCUMENT_KEYS, isStudentUploadableDocument } from "@/lib/student-fields";
 import { getStudent } from "@/lib/students-repo";
 
 export async function POST(req: Request) {
@@ -45,8 +45,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
     }
 
-    // Sinh viên không upload vào mục đã Đủ — chỉ admin
+    // Sinh viên chỉ upload ảnh (ẢNH / Ảnh thẻ); giấy tờ khác nộp bản cứng
     if (student && !admin) {
+      if (!isStudentUploadableDocument(body.fieldKey)) {
+        return NextResponse.json(
+          {
+            error:
+              "Giấy tờ này nộp bản cứng cho giáo viên chủ nhiệm — không upload trên hệ thống.",
+          },
+          { status: 403 }
+        );
+      }
       const profile = await getStudent(student.maSinhVien);
       if (profile?.documents?.[body.fieldKey]?.status === "du") {
         return NextResponse.json(

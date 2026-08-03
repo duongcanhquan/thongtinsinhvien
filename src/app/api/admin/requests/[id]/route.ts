@@ -208,6 +208,11 @@ function mergeDocuments(
       files,
     };
     if (slot.note) entry.note = String(slot.note).slice(0, 500);
+    if (slot.externalUrl) {
+      entry.externalUrl = String(slot.externalUrl).slice(0, 2000);
+    } else if (current[key]?.externalUrl) {
+      entry.externalUrl = current[key].externalUrl;
+    }
     next[key] = entry;
   }
   return next;

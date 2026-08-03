@@ -100,10 +100,146 @@ export const DOCUMENT_LABELS: Record<string, string> = {
   anhThe: "Ảnh thẻ",
 };
 
-/** Ordered Excel columns (Vietnamese header → field key), matching import layout. */
-export const EXCEL_HEADER_ORDER: { label: string; key: string }[] = Object.entries(
-  EXCEL_COLUMN_MAP
-).map(([label, key]) => ({ label, key }));
+/** Sinh viên chỉ được upload ảnh; giấy tờ khác nộp bản cứng cho GVCN. */
+export const STUDENT_UPLOADABLE_DOCUMENT_KEYS = new Set(["anh", "anhThe"]);
+
+export function isStudentUploadableDocument(key: string) {
+  return STUDENT_UPLOADABLE_DOCUMENT_KEYS.has(key);
+}
+
+/**
+ * Exact export layout from `SINH VIÊN K26.xlsx` (sheet CAO ĐẲNG).
+ * Row 1 = English, Row 2 = Vietnamese. Includes spacer columns (key null).
+ * Data starts at Excel row 3.
+ */
+export const EXCEL_EXPORT_LAYOUT: {
+  en: string;
+  vi: string;
+  key: string | null;
+}[] = [
+  { en: "No.", vi: "STT", key: "stt" },
+  { en: "Full Name", vi: "Họ và tên", key: "hoVaTen" },
+  { en: "", vi: "Họ và", key: "hoVa" },
+  { en: "Name", vi: "Tên", key: "ten" },
+  { en: "Student ID", vi: "Mã sinh viên", key: "maSinhVien" },
+  { en: "Gender", vi: "Giới tính", key: "gioiTinh" },
+  { en: "Date of Birth", vi: "Ngày sinh", key: "ngaySinh" },
+  { en: "Day", vi: "Ngày", key: "ngay" },
+  { en: "Month", vi: "Tháng", key: "thang" },
+  { en: "Year", vi: "Năm", key: "nam" },
+  { en: "Phone Number", vi: "Số điện thoại", key: "soDienThoai" },
+  { en: "University Email", vi: "Email trường", key: "emailTruong" },
+  { en: "Personal Email", vi: "Email cá nhân", key: "emailCaNhan" },
+  { en: "Region", vi: "Khu vực", key: "khuVuc" },
+  { en: "Permanent Address", vi: "Địa chỉ thường trú", key: "diaChiThuongTru" },
+  { en: "Current Address", vi: "Địa chỉ tạm trú/hiện tại", key: "diaChiTamTru" },
+  { en: "Training Program", vi: "Hệ đào tạo", key: "heDaoTao" },
+  { en: "Faculty", vi: "Khoa đào tạo", key: "khoaDaoTao" },
+  { en: "Major", vi: "Ngành", key: "nganh" },
+  { en: "Name", vi: "Lớp", key: "lop" },
+  { en: "", vi: "Lớp chủ nhiệm tháng 8 và tháng 9", key: "lopChuNhiemThang89" },
+  { en: "", vi: "Ghi chú xếp lớp", key: "ghiChuXepLop" },
+  { en: "", vi: "SV đã có laptop", key: "svDaCoLaptop" },
+  { en: "", vi: "Xếp lớp tin học", key: "xepLopTinHoc" },
+  { en: "Admission Cohort", vi: "Khóa ban đầu", key: "khoaBanDau" },
+  { en: "Current Cohort", vi: "Khóa hiện tại", key: "khoaHienTai" },
+  { en: "Place of Birth", vi: "Nơi sinh", key: "noiSinh" },
+  { en: "Ethnicity", vi: "Dân tộc", key: "danToc" },
+  { en: "ID Card", vi: "Căn cước", key: "canCuoc" },
+  { en: "Enrollment Date", vi: "Ngày nhập học", key: "ngayNhapHoc" },
+  { en: "Admissions Counseling", vi: "Tư vấn tuyển sinh", key: "tuVanTuyenSinh" },
+  { en: "Campus", vi: "Cơ sở học", key: "coSoHoc" },
+  { en: "Father's Full Name", vi: "Họ tên cha", key: "hoTenCha" },
+  { en: "Father's Phone Number", vi: "Sđt cha", key: "sdtCha" },
+  { en: "Mother's Full Name", vi: "Họ tên mẹ", key: "hoTenMe" },
+  { en: "Mother's Phone Number", vi: "Sđt mẹ", key: "sdtMe" },
+  { en: "Guardian", vi: "Người giám hộ", key: "nguoiGiamHo" },
+  { en: "Guardian's Phone Number", vi: "Sđt người giám hộ", key: "sdtNguoiGiamHo" },
+  { en: "High School", vi: "Trường THPT", key: "truongThpt" },
+  { en: "High School Province", vi: "Tỉnh trường", key: "tinhTruong" },
+  { en: "Priority Group", vi: "Đối tượng", key: "doiTuong" },
+  { en: "Average Score", vi: "Điểm trung bình", key: "diemTrungBinh" },
+  { en: "Scholarship", vi: "Học bổng", key: "hocBong" },
+  { en: "PHOTO", vi: "ẢNH", key: "anh" },
+  { en: "Incorrect Information", vi: "Thông tin sai lệch", key: "thongTinSaiLech" },
+  { en: "Laptop", vi: "Máy tính học tập", key: "mayTinhHocTap" },
+  { en: "", vi: "", key: null }, // spacer — giữ đúng khoảng cột file gốc
+  { en: "", vi: "Ghi chú hồ sơ", key: "ghiChuHoSo" },
+  { en: "", vi: "Phiếu đăng ký dự tuyển", key: "phieuDangKyDuTuyen" },
+  { en: "", vi: "Tờ khai sinh viên", key: "toKhaiSinhVien" },
+  { en: "", vi: "CCCD", key: "cccdFile" },
+  { en: "", vi: "Giấy khai sinh ", key: "giayKhaiSinh" }, // trailing space như file gốc
+  { en: "", vi: "Chứng nhận hoàn thành THPT", key: "chungNhanHoanThanhThpt" },
+  { en: "", vi: "Chứng nhận TN/kết quả thi THPT", key: "chungNhanTnKetQuaThiThpt" },
+  { en: "", vi: "Bằng THPT", key: "bangThpt" },
+  { en: "", vi: "Học bạ THPT", key: "hocBaThpt" },
+  { en: "", vi: "Bằng THCS", key: "bangThcs" },
+  { en: "", vi: "Học bạ THCS", key: "hocBaThcs" },
+  { en: "", vi: "Thông tin cư trú", key: "thongTinCuTru" },
+  { en: "", vi: "Giấy khám sức khỏe", key: "giayKhamSucKhoe" },
+  { en: "", vi: "Ảnh thẻ", key: "anhThe" },
+  { en: "", vi: "", key: null },
+  { en: "", vi: "", key: null },
+  { en: "", vi: "", key: null },
+  { en: "", vi: "", key: null },
+  { en: "", vi: "", key: null },
+  { en: "", vi: "", key: null },
+  { en: "", vi: "", key: null },
+  { en: "", vi: "", key: null },
+];
+
+export const EXCEL_SHEET_NAME = "CAO ĐẲNG";
+
+/** Ordered Excel columns (Vietnamese header → field key) for generic use. */
+export const EXCEL_HEADER_ORDER: { label: string; key: string }[] =
+  EXCEL_EXPORT_LAYOUT.filter(
+    (c): c is { en: string; vi: string; key: string } => Boolean(c.key)
+  ).map((c) => ({ label: c.vi.trim(), key: c.key }));
+
+/** Excel document cell text matching import template (Đủ / trống / note gốc). */
+export function documentSlotToExcel(
+  slot:
+    | {
+        status?: string;
+        note?: string;
+        externalUrl?: string;
+        files?: { name: string }[];
+      }
+    | undefined
+): string {
+  if (!slot) return "";
+  const note = cellToString(slot.note);
+  if (note) return note;
+  if (slot.externalUrl) return cellToString(slot.externalUrl) || "PHOTO";
+  if (slot.status === "du") return "Đủ";
+  if (slot.status === "co_file") return "Có file";
+  // "thieu" → để trống như file gốc (không ghi "Thiếu")
+  return "";
+}
+
+/** Lấy URL http(s) từ text hoặc chuỗi chứa link. */
+export function extractHttpUrl(value: unknown): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  if (/^https?:\/\//i.test(raw)) return sanitizeExternalUrl(raw);
+  const m = raw.match(/https?:\/\/[^\s<>"']+/i);
+  return m ? sanitizeExternalUrl(m[0]) : "";
+}
+
+export function sanitizeExternalUrl(url: string): string {
+  try {
+    const u = new URL(url.trim());
+    if (u.protocol !== "http:" && u.protocol !== "https:") return "";
+    // Chặn javascript: và scheme lạ
+    return u.toString();
+  } catch {
+    return "";
+  }
+}
+
+export function isExternalHttpUrl(value: unknown): boolean {
+  return Boolean(extractHttpUrl(value));
+}
 
 /** Fields students may propose changing (everything except mã SV). */
 export const STUDENT_EDITABLE_FIELDS = [

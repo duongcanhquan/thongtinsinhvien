@@ -2,6 +2,7 @@ import { getDb } from "@/lib/firebase-admin";
 import {
   DOCUMENT_KEYS,
   cellToString,
+  extractHttpUrl,
   inferDocumentStatus,
   normalizeCccd,
   normalizeEmail,
@@ -43,7 +44,8 @@ export function stripUndefined<T>(value: T): T {
 }
 
 export function studentFromFields(
-  fields: Record<string, string>
+  fields: Record<string, string>,
+  externalUrls?: Record<string, string>
 ): Student | null {
   const maSinhVien = cellToString(fields.maSinhVien);
   if (!maSinhVien) return null;
@@ -60,17 +62,36 @@ export function studentFromFields(
     const value = cellToString(raw);
 
     if (DOCUMENT_KEYS.has(key)) {
+      const link =
+        extractHttpUrl(externalUrls?.[key]) || extractHttpUrl(value);
       const slot: DocumentSlot = {
-        status: inferDocumentStatus(value),
+        status: link ? "du" : inferDocumentStatus(value),
         files: [],
       };
-      if (value) slot.note = value;
+      // Giữ tên file / ghi chú text; không nhét raw URL vào note nếu đã có externalUrl
+      if (value && !extractHttpUrl(value)) slot.note = value;
+      else if (value && !link) slot.note = value;
+      else if (value && link && value !== link) slot.note = value;
+      if (link) slot.externalUrl = link;
       documents[key] = slot;
       continue;
     }
 
     // Always store string (never undefined) for scalar fields
     student[key] = value;
+  }
+
+  // Apply links for columns that only had hyperlink (empty display text)
+  if (externalUrls) {
+    for (const [key, url] of Object.entries(externalUrls)) {
+      if (!DOCUMENT_KEYS.has(key)) continue;
+      const link = extractHttpUrl(url);
+      if (!link) continue;
+      const slot = documents[key] || { status: "thieu", files: [] };
+      slot.externalUrl = link;
+      if (slot.status === "thieu") slot.status = "du";
+      documents[key] = slot;
+    }
   }
 
   student.documents = documents;

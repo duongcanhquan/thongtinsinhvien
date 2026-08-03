@@ -1,7 +1,9 @@
 "use client";
 
 import {
+  ArrowsLeftRight,
   Check,
+  ClipboardText,
   DownloadSimple,
   Eye,
   FileArrowUp,
@@ -9,6 +11,8 @@ import {
   MagnifyingGlass,
   Plus,
   SignOut,
+  UserPlus,
+  Users,
   X,
 } from "@phosphor-icons/react";
 import Link from "next/link";
@@ -552,7 +556,7 @@ export default function AdminPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Import thất bại");
       setImportResult(
-        `Thêm mới: ${data.added}. Bỏ qua (đã có): ${data.skipped}. Lỗi: ${(data.errors || []).length}`
+        `Thêm mới: ${data.added}. Bỏ qua (đã có): ${data.skipped}. Cập nhật link ảnh: ${data.linksUpdated || 0}. Lỗi: ${(data.errors || []).length}`
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Lỗi");
@@ -610,166 +614,305 @@ export default function AdminPage() {
 
   if (authed === null) {
     return (
-      <main className="grid min-h-dvh place-items-center text-foreground/70">
-        Đang kiểm tra phiên…
+      <main className="grid min-h-dvh place-items-center bg-gradient-to-b from-hero-from/5 to-background text-foreground/70">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-10 w-10 animate-pulse rounded-full bg-primary/20" />
+          <p className="text-sm font-medium">Đang kiểm tra phiên admin…</p>
+        </div>
       </main>
     );
   }
 
   if (!authed) {
     return (
-      <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center px-4">
-        <h1 className="text-3xl font-bold">Admin QLĐT</h1>
-        <p className="mt-2 text-sm text-foreground/70">Đăng nhập quản lý đào tạo</p>
-        <form
-          onSubmit={login}
-          className="mt-6 space-y-4 rounded-2xl border border-border bg-surface p-5"
-        >
-          <label className="block text-sm font-medium">
-            Mật khẩu
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 min-h-12 w-full rounded-xl border border-border px-3"
-              autoComplete="current-password"
-              required
-            />
-          </label>
-          {loginError ? (
-            <p className="text-sm text-destructive" role="alert">
-              {loginError}
-            </p>
-          ) : null}
-          <button
-            type="submit"
-            className="min-h-12 w-full rounded-xl bg-primary font-semibold text-on-primary"
+      <main className="relative flex min-h-dvh items-center justify-center overflow-hidden px-4">
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-hero-from via-primary to-secondary" />
+        <div className="pointer-events-none absolute -left-20 top-20 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
+        <div className="pointer-events-none absolute -right-16 bottom-10 h-72 w-72 rounded-full bg-accent/20 blur-3xl" />
+        <div className="relative w-full max-w-md rounded-3xl border border-white/20 bg-white/95 p-7 shadow-2xl backdrop-blur">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-accent">
+            Cao Đẳng Việt Mỹ
+          </p>
+          <h1 className="font-display mt-2 text-3xl font-extrabold text-primary">
+            Admin QLĐT
+          </h1>
+          <p className="mt-2 text-sm text-foreground/65">
+            Đăng nhập để duyệt yêu cầu, quản lý hồ sơ và import/export.
+          </p>
+          <form onSubmit={login} className="mt-6 space-y-4">
+            <label className="block text-sm font-semibold text-foreground/80">
+              Mật khẩu quản trị
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="mt-1.5 min-h-12 w-full rounded-xl border border-border bg-white px-4 text-base shadow-sm"
+                autoComplete="current-password"
+                required
+              />
+            </label>
+            {loginError ? (
+              <p
+                className="rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+                role="alert"
+              >
+                {loginError}
+              </p>
+            ) : null}
+            <button
+              type="submit"
+              className="inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-primary text-base font-bold text-on-primary shadow-lg shadow-primary/25 transition hover:bg-secondary"
+            >
+              Đăng nhập Admin
+            </button>
+          </form>
+          <Link
+            href="/"
+            className="mt-5 block text-center text-sm font-semibold text-primary underline-offset-2 hover:underline"
           >
-            Đăng nhập
-          </button>
-        </form>
-        <Link href="/" className="mt-6 text-center text-sm text-primary">
-          Về trang sinh viên
-        </Link>
+            ← Về trang tra cứu sinh viên
+          </Link>
+        </div>
       </main>
     );
   }
 
+  const editCount = requests.filter((r) => r.intent !== "confirm").length;
+  const confirmCount = requests.filter((r) => r.intent === "confirm").length;
+
+  const tabs: { id: Tab; label: string; hint: string; icon: React.ReactNode; badge?: number }[] = [
+    {
+      id: "requests",
+      label: "Yêu cầu sửa",
+      hint: "Duyệt / từ chối",
+      icon: <ClipboardText size={18} weight="bold" />,
+      badge: requests.length,
+    },
+    {
+      id: "students",
+      label: "Sinh viên",
+      hint: "Tìm & sửa hồ sơ",
+      icon: <Users size={18} weight="bold" />,
+    },
+    {
+      id: "create",
+      label: "Nhập sinh viên",
+      hint: "Tạo hồ sơ mới",
+      icon: <UserPlus size={18} weight="bold" />,
+    },
+    {
+      id: "import",
+      label: "Import / Export",
+      hint: "Excel hàng loạt",
+      icon: <ArrowsLeftRight size={18} weight="bold" />,
+    },
+  ];
+
   return (
-    <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">Quản lý đào tạo</h1>
-          <p className="text-sm text-foreground/60">{requests.length} yêu cầu đang chờ</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => void logout()}
-          className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-border bg-surface px-3 text-sm"
-        >
-          <SignOut /> Đăng xuất
-        </button>
-      </header>
-
-      <nav className="mt-6 flex flex-wrap gap-2" aria-label="Admin tabs">
-        {(
-          [
-            ["requests", "Yêu cầu sửa"],
-            ["students", "Sinh viên"],
-            ["create", "Nhập sinh viên"],
-            ["import", "Import / Export"],
-          ] as const
-        ).map(([id, label]) => (
+    <main className="min-h-dvh bg-[linear-gradient(180deg,#e8eef8_0%,#f3f6fb_28%,#f3f6fb_100%)]">
+      <div className="border-b border-border/80 bg-gradient-to-r from-hero-from to-hero-to text-white">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-5 sm:px-6">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-white/70">
+              Cao Đẳng Việt Mỹ · Hà Nội
+            </p>
+            <h1 className="font-display mt-1 text-2xl font-extrabold sm:text-3xl">
+              Quản lý đào tạo
+            </h1>
+            <p className="mt-1 text-sm text-white/75">
+              Admin là cổng cuối duyệt dữ liệu sinh viên
+            </p>
+          </div>
           <button
-            key={id}
             type="button"
-            onClick={() => {
-              if (id === "create") openCreateTab();
-              else setTab(id);
-            }}
-            className={`min-h-11 rounded-full px-4 text-sm font-medium ${
-              tab === id
-                ? "bg-primary text-on-primary"
-                : "border border-border bg-surface"
-            }`}
+            onClick={() => void logout()}
+            className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/25 bg-white/10 px-4 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/20"
           >
-            {label}
+            <SignOut size={18} /> Đăng xuất
           </button>
-        ))}
-      </nav>
+        </div>
+      </div>
 
-      {error ? (
-        <p className="mt-4 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-          {error}
-        </p>
-      ) : null}
-      {message ? (
-        <p className="mt-4 rounded-xl border border-accent/20 bg-accent-soft px-4 py-3 text-sm font-medium text-accent">
-          {message}
-        </p>
-      ) : null}
+      <div className="mx-auto max-w-6xl px-4 py-5 sm:px-6">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <StatCard
+            label="Chờ duyệt"
+            value={String(requests.length)}
+            tone="amber"
+            onClick={() => setTab("requests")}
+          />
+          <StatCard
+            label="Yêu cầu chỉnh sửa"
+            value={String(editCount)}
+            tone="red"
+            onClick={() => setTab("requests")}
+          />
+          <StatCard
+            label="Xác nhận đúng"
+            value={String(confirmCount)}
+            tone="green"
+            onClick={() => setTab("requests")}
+          />
+        </div>
+
+        <nav
+          className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-4"
+          aria-label="Admin tabs"
+        >
+          {tabs.map((t) => {
+            const active = tab === t.id;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => {
+                  if (t.id === "create") openCreateTab();
+                  else setTab(t.id);
+                }}
+                className={`relative flex min-h-[4.5rem] items-center gap-3 rounded-2xl border px-4 py-3 text-left transition ${
+                  active
+                    ? "border-primary bg-primary text-on-primary shadow-lg shadow-primary/20"
+                    : "border-border bg-surface text-foreground hover:border-primary/40 hover:shadow-sm"
+                }`}
+              >
+                <span
+                  className={`grid h-10 w-10 place-items-center rounded-xl ${
+                    active ? "bg-white/15" : "bg-muted"
+                  }`}
+                >
+                  {t.icon}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-bold leading-tight">{t.label}</span>
+                  <span
+                    className={`mt-0.5 block text-xs ${
+                      active ? "text-white/75" : "text-foreground/55"
+                    }`}
+                  >
+                    {t.hint}
+                  </span>
+                </span>
+                {typeof t.badge === "number" && t.badge > 0 ? (
+                  <span
+                    className={`absolute right-3 top-3 inline-flex min-w-6 items-center justify-center rounded-full px-1.5 py-0.5 text-[11px] font-extrabold ${
+                      active ? "bg-accent text-white" : "bg-accent text-white"
+                    }`}
+                  >
+                    {t.badge}
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
+        </nav>
+
+        {error ? (
+          <p
+            className="mt-4 flex items-start gap-2 rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm font-medium text-destructive"
+            role="alert"
+          >
+            <X size={18} className="mt-0.5 shrink-0" weight="bold" />
+            <span className="flex-1">{error}</span>
+            <button
+              type="button"
+              className="text-xs font-bold underline"
+              onClick={() => setError("")}
+            >
+              Đóng
+            </button>
+          </p>
+        ) : null}
+        {message ? (
+          <p className="mt-4 flex items-start gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
+            <Check size={18} className="mt-0.5 shrink-0" weight="bold" />
+            <span className="flex-1">{message}</span>
+            <button
+              type="button"
+              className="text-xs font-bold underline"
+              onClick={() => setMessage("")}
+            >
+              Đóng
+            </button>
+          </p>
+        ) : null}
 
       {tab === "requests" ? (
         <section className="mt-6 grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
-          <div className="space-y-2">
-            <h2 className="text-sm font-semibold text-foreground/70">
-              Danh sách yêu cầu ({requests.length})
-            </h2>
+          <div className="space-y-3">
+            <div className="flex items-end justify-between gap-2">
+              <div>
+                <h2 className="font-display text-lg font-extrabold text-primary">
+                  Hàng chờ duyệt
+                </h2>
+                <p className="text-sm text-foreground/55">
+                  Bấm một dòng để xem thay đổi và Valid / Từ chối
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void refreshRequests()}
+                className="rounded-xl border border-border bg-surface px-3 py-2 text-xs font-bold text-primary"
+              >
+                Làm mới
+              </button>
+            </div>
             {requests.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-border p-6 text-sm text-foreground/60">
-                Không có yêu cầu pending.
-              </p>
+              <div className="rounded-2xl border border-dashed border-border bg-surface px-6 py-12 text-center">
+                <ClipboardText size={36} className="mx-auto text-foreground/30" />
+                <p className="mt-3 font-semibold text-foreground/70">
+                  Không có yêu cầu pending
+                </p>
+                <p className="mt-1 text-sm text-foreground/50">
+                  Khi sinh viên gửi chỉnh sửa, yêu cầu sẽ hiện tại đây.
+                </p>
+              </div>
             ) : (
               requests.map((r) => {
                 const id = r.student;
                 const active = selected?.maSinhVien === r.maSinhVien;
+                const fieldCount = Object.keys(r.proposedFields || {}).length;
+                const docCount = Object.keys(r.proposedDocuments || {}).length;
                 return (
                   <button
                     key={r.maSinhVien}
                     type="button"
                     onClick={() => void openRequest(r)}
-                    className={`w-full rounded-xl border px-4 py-3 text-left transition ${
+                    className={`w-full rounded-2xl border px-4 py-4 text-left shadow-sm transition ${
                       active
-                        ? "border-primary bg-primary/5 ring-1 ring-primary/30"
-                        : "border-border bg-surface hover:border-primary/40"
+                        ? "border-primary bg-primary/[0.06] ring-2 ring-primary/25"
+                        : "border-border bg-surface hover:border-primary/35 hover:shadow-md"
                     }`}
                   >
                     <div className="flex flex-wrap items-start justify-between gap-2">
-                      <p className="font-semibold leading-snug text-primary">
+                      <p className="font-display text-base font-extrabold leading-snug text-primary">
                         {id?.hoVaTen || "—"}
                       </p>
                       <span
-                        className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                        className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-extrabold ${
                           r.intent === "confirm"
                             ? "bg-emerald-100 text-emerald-800"
-                            : "bg-amber-100 text-amber-900"
+                            : "bg-amber-100 text-amber-950"
                         }`}
                       >
                         {r.intent === "confirm" ? "Xác nhận đúng" : "Chỉnh sửa"}
                       </span>
                     </div>
-                    <dl className="mt-2 space-y-1 text-sm">
-                      <div className="flex gap-2">
-                        <dt className="w-28 shrink-0 text-foreground/50">Mã SV</dt>
-                        <dd className="font-mono font-semibold break-all">
-                          {r.maSinhVien}
-                        </dd>
-                      </div>
-                      <div className="flex gap-2">
-                        <dt className="w-28 shrink-0 text-foreground/50">CCCD</dt>
-                        <dd className="break-all">{id?.canCuoc || "—"}</dd>
-                      </div>
-                      <div className="flex gap-2">
-                        <dt className="w-28 shrink-0 text-foreground/50">
-                          Số điện thoại
-                        </dt>
-                        <dd className="break-all">{id?.soDienThoai || "—"}</dd>
-                      </div>
+                    <dl className="mt-3 space-y-1.5 text-sm">
+                      <Row label="Mã sinh viên" value={r.maSinhVien} mono />
+                      <Row label="CCCD" value={id?.canCuoc || "—"} />
+                      <Row label="Số điện thoại" value={id?.soDienThoai || "—"} />
                     </dl>
-                    <p className="mt-2 text-[11px] text-foreground/45">
-                      {new Date(r.updatedAt).toLocaleString("vi-VN")} · Bấm để xem
-                      chi tiết
-                    </p>
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-foreground/50">
+                      <span className="rounded-lg bg-muted px-2 py-1">
+                        {fieldCount} trường
+                      </span>
+                      <span className="rounded-lg bg-muted px-2 py-1">
+                        {docCount} giấy tờ
+                      </span>
+                      <span className="ml-auto">
+                        {new Date(r.updatedAt).toLocaleString("vi-VN")}
+                      </span>
+                    </div>
                   </button>
                 );
               })
@@ -796,9 +939,15 @@ export default function AdminPage() {
             ) : selected ? (
               <p className="text-sm text-foreground/60">Đang tải hồ sơ sinh viên…</p>
             ) : (
-              <p className="rounded-2xl border border-dashed border-border p-8 text-sm text-foreground/55">
-                Chọn một yêu cầu bên trái để xem và duyệt.
-              </p>
+              <div className="sticky top-4 rounded-2xl border border-dashed border-border bg-surface/80 px-6 py-16 text-center">
+                <ClipboardText size={40} className="mx-auto text-foreground/25" />
+                <p className="mt-3 font-semibold text-foreground/70">
+                  Chưa chọn yêu cầu
+                </p>
+                <p className="mt-1 text-sm text-foreground/50">
+                  Bấm một dòng bên trái để xem diff và Valid / Từ chối.
+                </p>
+              </div>
             )}
           </div>
 
@@ -851,53 +1000,99 @@ export default function AdminPage() {
 
       {tab === "students" ? (
         <section className="mt-6 space-y-4">
+          <div>
+            <h2 className="font-display text-lg font-extrabold text-primary">
+              Tìm & sửa hồ sơ
+            </h2>
+            <p className="text-sm text-foreground/55">
+              Tra cứu nhanh rồi mở form chỉnh sửa toàn bộ thông tin / giấy tờ
+            </p>
+          </div>
           <form
             onSubmit={(e) => void searchStudents(e)}
-            className="flex flex-col gap-2 sm:flex-row"
+            className="flex flex-col gap-2 rounded-2xl border border-border bg-surface p-3 shadow-sm sm:flex-row sm:items-center"
           >
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Tìm theo tên / email / SĐT / CCCD / mã SV"
-              className="min-h-12 flex-1 rounded-xl border border-border px-4"
-            />
+            <div className="relative min-w-0 flex-1">
+              <MagnifyingGlass
+                size={18}
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-foreground/40"
+              />
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Tên / email / SĐT / CCCD / mã SV"
+                className="min-h-12 w-full rounded-xl border border-border bg-white pl-10 pr-4 text-sm"
+              />
+            </div>
             <button
               type="submit"
-              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-primary px-5 font-semibold text-on-primary"
+              className="inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-6 text-sm font-bold text-on-primary shadow-md shadow-primary/20 transition hover:bg-secondary"
             >
-              <MagnifyingGlass /> Tìm
+              <MagnifyingGlass weight="bold" /> Tìm kiếm
             </button>
           </form>
 
-          <div className="overflow-x-auto rounded-2xl border border-border bg-surface">
+          <div className="overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
             <table className="min-w-full text-left text-sm">
-              <thead className="bg-muted/60 text-foreground/70">
+              <thead className="bg-primary text-white">
                 <tr>
-                  <th className="px-3 py-2">Mã SV</th>
-                  <th className="px-3 py-2">Họ tên</th>
-                  <th className="px-3 py-2">SĐT</th>
-                  <th className="px-3 py-2">CCCD</th>
-                  <th className="px-3 py-2" />
+                  <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide">
+                    Mã SV
+                  </th>
+                  <th className="px-4 py-3 text-xs font-bold uppercase tracking-wide">
+                    Họ tên
+                  </th>
+                  <th className="hidden px-4 py-3 text-xs font-bold uppercase tracking-wide sm:table-cell">
+                    SĐT
+                  </th>
+                  <th className="hidden px-4 py-3 text-xs font-bold uppercase tracking-wide md:table-cell">
+                    CCCD
+                  </th>
+                  <th className="px-4 py-3 text-right text-xs font-bold uppercase tracking-wide">
+                    Thao tác
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {students.map((s) => (
-                  <tr key={s.maSinhVien} className="border-t border-border/70">
-                    <td className="px-3 py-2 font-mono text-xs">{s.maSinhVien}</td>
-                    <td className="px-3 py-2">{s.hoVaTen}</td>
-                    <td className="px-3 py-2">{s.soDienThoai}</td>
-                    <td className="px-3 py-2">{s.canCuoc}</td>
-                    <td className="px-3 py-2">
-                      <button
-                        type="button"
-                        className="text-primary"
-                        onClick={() => void openStudent(s)}
-                      >
-                        Xem / Sửa
-                      </button>
+                {students.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={5}
+                      className="px-4 py-12 text-center text-sm text-foreground/50"
+                    >
+                      Nhập từ khóa và bấm Tìm kiếm để hiện danh sách.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  students.map((s) => (
+                    <tr
+                      key={s.maSinhVien}
+                      className="border-t border-border/70 transition hover:bg-muted/40"
+                    >
+                      <td className="px-4 py-3 font-mono text-xs font-semibold">
+                        {s.maSinhVien}
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-primary">
+                        {s.hoVaTen}
+                      </td>
+                      <td className="hidden px-4 py-3 sm:table-cell">
+                        {s.soDienThoai || "—"}
+                      </td>
+                      <td className="hidden px-4 py-3 md:table-cell">
+                        {s.canCuoc || "—"}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          className="inline-flex min-h-10 items-center rounded-xl bg-accent px-3 text-xs font-bold text-white shadow-sm transition hover:brightness-110"
+                          onClick={() => void openStudent(s)}
+                        >
+                          Xem / Sửa
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -927,17 +1122,19 @@ export default function AdminPage() {
 
       {tab === "create" ? (
         <section className="mt-6 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-surface p-4 shadow-sm">
             <div>
-              <h2 className="text-lg font-semibold">Nhập sinh viên</h2>
-              <p className="text-sm text-foreground/60">
-                Điền thông tin trước, giấy tờ phía dưới — rồi bấm Tạo sinh viên.
+              <h2 className="font-display text-lg font-extrabold text-primary">
+                Nhập sinh viên mới
+              </h2>
+              <p className="text-sm text-foreground/55">
+                Thông tin trước → giấy tờ dưới → bấm Tạo sinh viên
               </p>
             </div>
             <button
               type="button"
               onClick={startCreateStudent}
-              className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-border bg-surface px-4 text-sm font-semibold"
+              className="inline-flex min-h-11 items-center gap-2 rounded-xl border-2 border-primary/20 bg-muted px-4 text-sm font-bold text-primary transition hover:border-primary/40"
             >
               <Plus weight="bold" /> Làm mới form
             </button>
@@ -965,15 +1162,21 @@ export default function AdminPage() {
       ) : null}
 
       {tab === "import" ? (
-        <section className="mt-6 space-y-4">
-          <div className="rounded-2xl border border-border bg-surface p-6">
-            <h2 className="flex items-center gap-2 text-lg font-semibold">
-              <FileXls /> Import Excel
+        <section className="mt-6 grid gap-4 lg:grid-cols-2">
+          <div className="rounded-2xl border border-border bg-surface p-6 shadow-sm">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-800">
+              <FileXls size={24} weight="bold" />
+            </div>
+            <h2 className="font-display mt-4 text-lg font-extrabold text-primary">
+              Import Excel
             </h2>
-            <p className="mt-2 text-sm text-foreground/70">
-              Đọc dữ liệu từ dòng 3. Trùng mã sinh viên sẽ được bỏ qua.
+            <p className="mt-2 text-sm text-foreground/65">
+              Đọc từ dòng 3. Mã sinh viên đã có sẽ được bỏ qua (không ghi đè
+              thông tin), nhưng <strong>link Drive cột ẢNH</strong> vẫn được
+              cập nhật nếu Excel có hyperlink.
             </p>
-            <label className="mt-4 inline-flex min-h-12 cursor-pointer items-center rounded-xl border border-dashed border-border px-4 text-sm font-medium">
+            <label className="mt-5 inline-flex min-h-12 cursor-pointer items-center gap-2 rounded-xl border-2 border-dashed border-primary/30 bg-muted/50 px-5 text-sm font-bold text-primary transition hover:border-primary hover:bg-muted">
+              <FileArrowUp size={18} weight="bold" />
               Chọn file .xlsx
               <input
                 type="file"
@@ -983,28 +1186,37 @@ export default function AdminPage() {
               />
             </label>
             {importResult ? (
-              <p className="mt-4 text-sm text-accent">{importResult}</p>
+              <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800">
+                {importResult}
+              </p>
             ) : null}
           </div>
 
-          <div className="rounded-2xl border border-border bg-surface p-6">
-            <h2 className="flex items-center gap-2 text-lg font-semibold">
-              <DownloadSimple /> Export Excel
+          <div className="rounded-2xl border border-border bg-surface p-6 shadow-sm">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+              <DownloadSimple size={24} weight="bold" />
+            </div>
+            <h2 className="font-display mt-4 text-lg font-extrabold text-primary">
+              Export Excel
             </h2>
-            <p className="mt-2 text-sm text-foreground/70">
-              Xuất toàn bộ hồ sơ hiện tại (bản đã duyệt/sửa), cùng cấu trúc cột
-              với file import.
+            <p className="mt-2 text-sm text-foreground/65">
+              Xuất đúng khuôn file gốc: sheet CAO ĐẲNG, dòng 1 tiếng Anh, dòng 2
+              tiếng Việt, thứ tự / khoảng cột giữ nguyên — mở dùng được ngay.
             </p>
             <button
               type="button"
               disabled={busy}
               onClick={() => void onExport()}
-              className="mt-4 inline-flex min-h-12 items-center gap-2 rounded-xl bg-primary px-5 font-semibold text-on-primary disabled:opacity-50"
+              className="mt-5 inline-flex min-h-12 items-center gap-2 rounded-xl bg-primary px-5 text-sm font-bold text-on-primary shadow-md shadow-primary/20 transition hover:bg-secondary disabled:opacity-50"
             >
-              <FileXls /> Tải file Excel
+              <FileXls size={18} weight="bold" /> Tải file Excel
             </button>
           </div>
-          {busy ? <p className="text-sm text-foreground/60">Đang xử lý…</p> : null}
+          {busy ? (
+            <p className="text-sm font-medium text-foreground/60 lg:col-span-2">
+              Đang xử lý file…
+            </p>
+          ) : null}
         </section>
       ) : null}
 
@@ -1023,6 +1235,7 @@ export default function AdminPage() {
           />
         </div>
       ) : null}
+      </div>
     </main>
   );
 }
@@ -1059,14 +1272,27 @@ function RequestDetailPanel({
   return (
     <div
       className={`space-y-4 ${
-        compact ? "" : "rounded-2xl border border-border bg-surface p-5"
+        compact
+          ? ""
+          : "sticky top-4 rounded-2xl border border-border bg-surface p-5 shadow-md"
       }`}
     >
       <div>
-        <h2 className="text-lg font-semibold">
-          {selected.intent === "confirm" ? "Xác nhận đúng" : "Yêu cầu chỉnh sửa"}
-        </h2>
-        <dl className="mt-3 grid gap-2 rounded-xl bg-muted/50 p-3 text-sm sm:grid-cols-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="font-display text-xl font-extrabold text-primary">
+            {selected.intent === "confirm" ? "Xác nhận đúng" : "Yêu cầu chỉnh sửa"}
+          </h2>
+          <span
+            className={`rounded-full px-2.5 py-1 text-[11px] font-extrabold ${
+              selected.intent === "confirm"
+                ? "bg-emerald-100 text-emerald-800"
+                : "bg-amber-100 text-amber-950"
+            }`}
+          >
+            {changedKeys.length + changedDocs.length} thay đổi
+          </span>
+        </div>
+        <dl className="mt-3 grid gap-2 rounded-xl border border-border/70 bg-muted/40 p-3 text-sm sm:grid-cols-2">
           <Info label="Họ và tên" value={requestStudent.hoVaTen} />
           <Info label="Mã sinh viên" value={requestStudent.maSinhVien} />
           <Info label="CCCD" value={String(requestStudent.canCuoc || "")} />
@@ -1077,35 +1303,35 @@ function RequestDetailPanel({
       {selected.intent !== "confirm" ? (
         <>
           <div>
-            <h3 className="text-sm font-semibold">Trường thay đổi</h3>
+            <h3 className="text-sm font-bold text-primary">Trường thay đổi</h3>
             {changedKeys.length === 0 && changedDocs.length === 0 ? (
               <p className="mt-2 text-sm text-foreground/60">
                 Không có diff trường (có thể chỉ xác nhận / file).
               </p>
             ) : (
-              <div className="mt-2 overflow-x-auto">
+              <div className="mt-2 overflow-x-auto rounded-xl border border-border">
                 <table className="min-w-full text-left text-sm">
-                  <thead className="bg-muted/60 text-xs uppercase text-foreground/60">
+                  <thead className="bg-primary/95 text-xs uppercase tracking-wide text-white">
                     <tr>
-                      <th className="px-2 py-2">Trường</th>
-                      <th className="px-2 py-2">Cũ</th>
-                      <th className="px-2 py-2">Mới / Admin sửa</th>
+                      <th className="px-3 py-2.5">Trường</th>
+                      <th className="px-3 py-2.5">Cũ</th>
+                      <th className="px-3 py-2.5">Mới / Admin sửa</th>
                     </tr>
                   </thead>
                   <tbody>
                     {changedKeys.map((key) => (
                       <tr key={key} className="border-t border-border/70 align-top">
-                        <td className="px-2 py-2 font-medium">
+                        <td className="px-3 py-2.5 font-semibold">
                           {FIELD_LABELS[key] || key}
                         </td>
-                        <td className="px-2 py-2 text-foreground/60 break-all">
+                        <td className="px-3 py-2.5 break-all text-foreground/55">
                           {String(
                             (requestStudent as Record<string, unknown>)[key] ?? "—"
                           )}
                         </td>
-                        <td className="px-2 py-2">
+                        <td className="px-3 py-2.5">
                           <input
-                            className="min-h-10 w-full rounded-lg border border-border px-2"
+                            className="min-h-10 w-full rounded-lg border-2 border-accent/40 bg-accent-soft/40 px-2 font-medium"
                             value={editDraft[key] || ""}
                             onChange={(e) =>
                               setEditDraft((prev) => ({
@@ -1125,7 +1351,9 @@ function RequestDetailPanel({
 
           {changedDocs.length ? (
             <div>
-              <h3 className="text-sm font-semibold">Giấy tờ thay đổi (cũ → mới)</h3>
+              <h3 className="text-sm font-bold text-primary">
+                Giấy tờ thay đổi (cũ → mới)
+              </h3>
               <div className="mt-2 space-y-3">
                 {changedDocs.map((key) => {
                   const slot = selected.proposedDocuments?.[key];
@@ -1133,9 +1361,9 @@ function RequestDetailPanel({
                   return (
                     <div
                       key={key}
-                      className="rounded-xl border border-border/80 p-3 text-sm"
+                      className="rounded-xl border border-border bg-muted/30 p-3 text-sm"
                     >
-                      <p className="font-medium">{DOCUMENT_LABELS[key] || key}</p>
+                      <p className="font-bold">{DOCUMENT_LABELS[key] || key}</p>
                       <p className="mt-1 text-xs text-foreground/55">
                         Trạng thái: {curr?.status || "—"} → {slot?.status || "—"}
                         {slot?.note || curr?.note
@@ -1144,7 +1372,7 @@ function RequestDetailPanel({
                       </p>
                       <div className="mt-2 grid gap-2 sm:grid-cols-2">
                         <div>
-                          <p className="text-xs font-semibold uppercase text-foreground/50">
+                          <p className="text-xs font-bold uppercase text-foreground/50">
                             Cũ
                           </p>
                           <div className="mt-1 flex flex-wrap gap-2">
@@ -1163,7 +1391,7 @@ function RequestDetailPanel({
                           </div>
                         </div>
                         <div>
-                          <p className="text-xs font-semibold uppercase text-foreground/50">
+                          <p className="text-xs font-bold uppercase text-accent">
                             Mới
                           </p>
                           <div className="mt-1 flex flex-wrap gap-2">
@@ -1190,40 +1418,88 @@ function RequestDetailPanel({
           ) : null}
         </>
       ) : (
-        <p className="rounded-xl bg-accent/10 px-3 py-2 text-sm text-accent">
-          Sinh viên xác nhận hồ sơ hiện tại là đúng.
+        <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
+          Sinh viên xác nhận hồ sơ hiện tại là đúng — chỉ cần Valid hoặc Từ chối.
         </p>
       )}
 
-      <label className="block text-sm">
+      <label className="block text-sm font-semibold">
         Ghi chú admin
         <input
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          className="mt-1 min-h-11 w-full rounded-lg border border-border px-3"
+          placeholder="Tuỳ chọn — lý do từ chối / ghi chú duyệt…"
+          className="mt-1.5 min-h-11 w-full rounded-xl border border-border bg-white px-3"
         />
       </label>
 
-      <div className="flex flex-wrap gap-2 pb-2">
+      <div className="sticky bottom-0 -mx-1 flex flex-col gap-2 border-t border-border bg-surface/95 pt-3 backdrop-blur sm:flex-row">
         <button
           type="button"
           disabled={busy}
           onClick={() =>
             void decide(selected.intent === "confirm" ? "approve" : "edit_approve")
           }
-          className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-accent px-4 font-semibold text-white disabled:opacity-50 sm:flex-none"
+          className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-base font-extrabold text-white shadow-lg shadow-emerald-600/25 transition hover:bg-emerald-700 disabled:opacity-50"
         >
-          <Check /> Valid / Duyệt
+          <Check size={20} weight="bold" /> Valid / Duyệt
         </button>
         <button
           type="button"
           disabled={busy}
           onClick={() => void decide("reject")}
-          className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-destructive px-4 font-semibold text-white disabled:opacity-50 sm:flex-none"
+          className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl border-2 border-destructive bg-white px-4 text-base font-extrabold text-destructive transition hover:bg-destructive hover:text-white disabled:opacity-50"
         >
-          <X /> Từ chối
+          <X size={20} weight="bold" /> Từ chối
         </button>
       </div>
+    </div>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  tone,
+  onClick,
+}: {
+  label: string;
+  value: string;
+  tone: "amber" | "red" | "green";
+  onClick?: () => void;
+}) {
+  const tones = {
+    amber: "border-amber-200 bg-amber-50 text-amber-950",
+    red: "border-red-200 bg-red-50 text-red-950",
+    green: "border-emerald-200 bg-emerald-50 text-emerald-950",
+  } as const;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-2xl border px-4 py-3 text-left shadow-sm transition hover:shadow-md ${tones[tone]}`}
+    >
+      <p className="text-xs font-bold uppercase tracking-wide opacity-70">{label}</p>
+      <p className="font-display mt-1 text-3xl font-extrabold tabular-nums">{value}</p>
+    </button>
+  );
+}
+
+function Row({
+  label,
+  value,
+  mono,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className="flex gap-2">
+      <dt className="w-28 shrink-0 text-foreground/50">{label}</dt>
+      <dd className={`break-all ${mono ? "font-mono font-semibold" : "font-medium"}`}>
+        {value}
+      </dd>
     </div>
   );
 }
@@ -1267,15 +1543,15 @@ function StudentEditor({
   hideClose?: boolean;
 }) {
   return (
-    <div className="space-y-5 rounded-2xl border border-border bg-surface p-5">
-      <div className="flex flex-wrap items-start justify-between gap-2">
+    <div className="space-y-5 rounded-2xl border border-border bg-surface p-5 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-2 border-b border-border pb-4">
         <div>
-          <h2 className="text-lg font-semibold">
+          <h2 className="font-display text-xl font-extrabold text-primary">
             {editMode === "create"
-              ? "Nhập sinh viên mới"
+              ? "Form nhập sinh viên"
               : editStudent.hoVaTen || "Hồ sơ sinh viên"}
           </h2>
-          <p className="text-sm text-foreground/60">
+          <p className="mt-1 text-sm text-foreground/60">
             {editMode === "create"
               ? "Điền thông tin trước, giấy tờ phía dưới."
               : `Mã SV: ${editStudent.maSinhVien}`}
@@ -1284,7 +1560,7 @@ function StudentEditor({
         {!hideClose ? (
           <button
             type="button"
-            className="text-sm text-foreground/60"
+            className="inline-flex min-h-10 items-center rounded-xl border border-border px-3 text-sm font-semibold text-foreground/70 hover:bg-muted"
             onClick={onClose}
           >
             Đóng
@@ -1431,6 +1707,17 @@ function StudentEditor({
                     {slot.note ? (
                       <p className="mt-1 text-xs text-foreground/55">{slot.note}</p>
                     ) : null}
+                    {slot.externalUrl ? (
+                      <a
+                        href={slot.externalUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-2 inline-flex min-h-10 items-center rounded-lg border border-primary/30 bg-white px-3 text-sm font-bold text-primary hover:bg-muted"
+                      >
+                        Xem ảnh Drive
+                        {slot.note ? ` · ${slot.note}` : ""}
+                      </a>
+                    ) : null}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <select
@@ -1498,18 +1785,21 @@ function StudentEditor({
         </div>
       </section>
 
-      <button
-        type="button"
-        disabled={busy}
-        onClick={saveStudent}
-        className="min-h-11 rounded-xl bg-primary px-4 font-semibold text-on-primary disabled:opacity-50"
-      >
-        {busy
-          ? "Đang lưu…"
-          : editMode === "create"
-            ? "Tạo sinh viên"
-            : "Lưu thay đổi thông tin"}
-      </button>
+      <div className="sticky bottom-0 -mx-1 border-t border-border bg-surface/95 pt-4 backdrop-blur">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={saveStudent}
+          className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 text-base font-extrabold text-on-primary shadow-lg shadow-primary/25 transition hover:bg-secondary disabled:opacity-50 sm:w-auto"
+        >
+          <Check size={20} weight="bold" />
+          {busy
+            ? "Đang lưu…"
+            : editMode === "create"
+              ? "Tạo sinh viên"
+              : "Lưu thay đổi thông tin"}
+        </button>
+      </div>
     </div>
   );
 }
