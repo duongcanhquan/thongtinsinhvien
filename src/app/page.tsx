@@ -322,7 +322,7 @@ export default function HomePage() {
                           </li>
                         ) : (
                           suggestions.map((m) => (
-                            <li key={m.maSinhVien} role="option">
+                            <li key={m.maSinhVien} role="option" aria-selected={selected?.maSinhVien === m.maSinhVien}>
                               <button
                                 type="button"
                                 onMouseDown={(e) => e.preventDefault()}
