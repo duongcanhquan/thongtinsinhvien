@@ -30,7 +30,7 @@ import {
   validateProfileFields,
 } from "@/components/form-fields";
 
-type Tab = "requests" | "students" | "import";
+type Tab = "requests" | "students" | "create" | "import";
 type EditMode = "create" | "edit";
 
 const FIELD_GROUPS: { title: string; keys: readonly string[] }[] = [
@@ -236,6 +236,7 @@ export default function AdminPage() {
       if (!res.ok) throw new Error(data.error || "Không tải hồ sơ");
       setEditMode("edit");
       setEditStudent(data.student);
+      setTab("students");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Lỗi");
     } finally {
@@ -248,7 +249,18 @@ export default function AdminPage() {
     setMessage("");
     setEditMode("create");
     setEditStudent(blankStudent());
-    setTab("students");
+    setTab("create");
+  }
+
+  function openCreateTab() {
+    setTab("create");
+    // Luôn mở form trống khi vào tab nhập mới (trừ khi vừa tạo xong đang sửa tiếp)
+    if (editMode !== "create" || !editStudent) {
+      setError("");
+      setMessage("");
+      setEditMode("create");
+      setEditStudent(blankStudent());
+    }
   }
 
   async function decide(action: "approve" | "reject" | "edit_approve") {
@@ -641,13 +653,17 @@ export default function AdminPage() {
           [
             ["requests", "Yêu cầu sửa"],
             ["students", "Sinh viên"],
+            ["create", "Nhập sinh viên"],
             ["import", "Import / Export"],
           ] as const
         ).map(([id, label]) => (
           <button
             key={id}
             type="button"
-            onClick={() => setTab(id)}
+            onClick={() => {
+              if (id === "create") openCreateTab();
+              else setTab(id);
+            }}
             className={`min-h-11 rounded-full px-4 text-sm font-medium ${
               tab === id
                 ? "bg-primary text-on-primary"
@@ -881,32 +897,23 @@ export default function AdminPage() {
 
       {tab === "students" ? (
         <section className="mt-6 space-y-4">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
-            <form
-              onSubmit={(e) => void searchStudents(e)}
-              className="flex flex-1 flex-col gap-2 sm:flex-row"
-            >
-              <input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Tìm theo tên / email / SĐT / CCCD / mã SV"
-                className="min-h-12 flex-1 rounded-xl border border-border px-4"
-              />
-              <button
-                type="submit"
-                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-primary px-5 font-semibold text-on-primary"
-              >
-                <MagnifyingGlass /> Tìm
-              </button>
-            </form>
+          <form
+            onSubmit={(e) => void searchStudents(e)}
+            className="flex flex-col gap-2 sm:flex-row"
+          >
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Tìm theo tên / email / SĐT / CCCD / mã SV"
+              className="min-h-12 flex-1 rounded-xl border border-border px-4"
+            />
             <button
-              type="button"
-              onClick={startCreateStudent}
-              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-accent px-5 font-semibold text-white"
+              type="submit"
+              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-primary px-5 font-semibold text-on-primary"
             >
-              <Plus weight="bold" /> Nhập tay SV
+              <MagnifyingGlass /> Tìm
             </button>
-          </div>
+          </form>
 
           <div className="overflow-x-auto rounded-2xl border border-border bg-surface">
             <table className="min-w-full text-left text-sm">
@@ -941,267 +948,64 @@ export default function AdminPage() {
             </table>
           </div>
 
-          {editStudent ? (
-            <div className="space-y-5 rounded-2xl border border-border bg-surface p-5">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <h2 className="text-lg font-semibold">
-                    {editMode === "create"
-                      ? "Nhập tay sinh viên mới"
-                      : editStudent.hoVaTen || "Hồ sơ sinh viên"}
-                  </h2>
-                  <p className="text-sm text-foreground/60">
-                    {editMode === "create"
-                      ? "Điền thông tin + upload giấy tờ, rồi bấm Tạo sinh viên."
-                      : `Mã SV: ${editStudent.maSinhVien}`}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  className="text-sm text-foreground/60"
-                  onClick={() => {
-                    setEditStudent(null);
-                    setEditMode("edit");
-                    setMessage("");
-                  }}
-                >
-                  Đóng
-                </button>
-              </div>
+          {editStudent && editMode === "edit" ? (
+            <StudentEditor
+              editStudent={editStudent}
+              editMode={editMode}
+              busy={busy}
+              uploadingKey={uploadingKey}
+              onClose={() => {
+                setEditStudent(null);
+                setEditMode("edit");
+                setMessage("");
+              }}
+              setEditStudent={setEditStudent}
+              setError={setError}
+              saveStudent={() => void saveStudent()}
+              uploadStudentFile={uploadStudentFile}
+              removeStudentFile={removeStudentFile}
+              downloadKey={downloadKey}
+              previewFile={previewFile}
+            />
+          ) : null}
+        </section>
+      ) : null}
 
-              <label className="block text-sm">
-                Mã sinh viên {editMode === "create" ? "(bắt buộc)" : "(không sửa)"}
-                <input
-                  className={`mt-1 min-h-11 w-full rounded-lg border border-border px-3 ${
-                    editMode === "edit" ? "bg-muted/40" : ""
-                  }`}
-                  value={editStudent.maSinhVien}
-                  readOnly={editMode === "edit"}
-                  onChange={(e) => {
-                    if (editMode !== "create") return;
-                    const hasFiles = Object.values(editStudent.documents || {}).some(
-                      (d) => (d.files || []).length > 0
-                    );
-                    if (hasFiles) {
-                      setError(
-                        "Không đổi mã SV sau khi đã upload file — xóa file hoặc tạo mới."
-                      );
-                      return;
-                    }
-                    setEditStudent({
-                      ...editStudent,
-                      maSinhVien: e.target.value.trim(),
-                    });
-                  }}
-                  placeholder="VD: 51112610099"
-                />
-              </label>
-
-              <section>
-                <h3 className="mb-2 font-semibold text-primary">
-                  Giấy tờ / ảnh — Admin được bổ sung / thay thế mọi mục
-                </h3>
-                <p className="mb-3 text-sm text-foreground/60">
-                  <span className="font-semibold text-emerald-700">Xanh = Đủ</span>,{" "}
-                  <span className="font-semibold text-destructive">Đỏ = Thiếu</span>.
-                  Admin luôn có quyền upload/thay file mọi trường (kể cả đã Đủ).
-                </p>
-                <div className="space-y-3">
-                  {Object.entries(DOCUMENT_LABELS).map(([key, label]) => {
-                    const slot: DocumentSlot =
-                      editStudent.documents?.[key] || {
-                        status: "thieu",
-                        files: [],
-                      };
-                    const busyUpload = uploadingKey === key;
-                    const isDu = slot.status === "du";
-                    const isThieu = slot.status === "thieu";
-                    return (
-                      <div
-                        key={key}
-                        className={`rounded-xl border p-3 ${
-                          isDu
-                            ? "border-emerald-200 bg-emerald-50/80"
-                            : isThieu
-                              ? "border-destructive/25 bg-red-50/70"
-                              : "border-amber-200 bg-amber-50/60"
-                        }`}
-                      >
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div>
-                            <p className="font-medium">{label}</p>
-                            <span
-                              className={`mt-1 inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold text-white ${
-                                isDu
-                                  ? "bg-emerald-600"
-                                  : isThieu
-                                    ? "bg-destructive"
-                                    : "bg-amber-500"
-                              }`}
-                            >
-                              {isDu
-                                ? "Đủ"
-                                : isThieu
-                                  ? "Thiếu"
-                                  : "Có file"}
-                            </span>
-                            {slot.note ? (
-                              <p className="mt-1 text-xs text-foreground/55">
-                                {slot.note}
-                              </p>
-                            ) : null}
-                          </div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <select
-                              className="min-h-10 rounded-lg border border-border bg-white px-2 text-sm"
-                              value={slot.status}
-                              onChange={(e) =>
-                                setEditStudent({
-                                  ...editStudent,
-                                  documents: {
-                                    ...(editStudent.documents || {}),
-                                    [key]: {
-                                      ...slot,
-                                      status: e.target
-                                        .value as DocumentSlot["status"],
-                                    },
-                                  },
-                                })
-                              }
-                            >
-                              <option value="thieu">Thiếu</option>
-                              <option value="du">Đủ</option>
-                              <option value="co_file">Có file</option>
-                            </select>
-                            <label className="inline-flex min-h-10 cursor-pointer items-center gap-1.5 rounded-lg bg-accent px-3 text-sm font-semibold text-white">
-                              <FileArrowUp size={16} weight="bold" />
-                              {busyUpload
-                                ? "Đang tải…"
-                                : "Bổ sung / thay thế"}
-                              <input
-                                type="file"
-                                accept="application/pdf,image/*,.pdf,.jpg,.jpeg,.png,.webp,.gif,.heic,.heif"
-                                multiple
-                                disabled={busy || busyUpload}
-                                className="sr-only"
-                                onChange={(e) => {
-                                  void uploadStudentFile(key, e.target.files);
-                                  e.target.value = "";
-                                }}
-                              />
-                            </label>
-                          </div>
-                        </div>
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {(slot.files || []).map((f) => (
-                            <div key={f.key} className="inline-flex items-center gap-1">
-                              <FileActions
-                                file={f}
-                                onDownload={() => void downloadKey(f.key)}
-                                onPreview={() => void previewFile(f)}
-                              />
-                              <button
-                                type="button"
-                                title="Xóa file"
-                                className="rounded-lg border border-border bg-white px-2 py-1.5 text-xs text-destructive"
-                                onClick={() => void removeStudentFile(key, f.key)}
-                              >
-                                <X size={14} />
-                              </button>
-                            </div>
-                          ))}
-                          {!slot.files?.length ? (
-                            <span className="text-xs text-foreground/50">
-                              Chưa có file
-                            </span>
-                          ) : null}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </section>
-
-              {FIELD_GROUPS.map((group) => (
-                <section key={group.title}>
-                  <h3 className="mb-2 font-semibold text-primary">{group.title}</h3>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {group.keys.map((key) => {
-                      if (key === "ngaySinh") {
-                        return (
-                          <BirthDateFields
-                            key={key}
-                            ngaySinh={String(editStudent.ngaySinh || "")}
-                            ngay={String(editStudent.ngay || "")}
-                            thang={String(editStudent.thang || "")}
-                            nam={String(editStudent.nam || "")}
-                            inputClassName="min-h-11 w-full rounded-lg border border-border bg-white px-3 text-sm"
-                            onChange={(next) =>
-                              setEditStudent({
-                                ...editStudent,
-                                ...next,
-                              })
-                            }
-                          />
-                        );
-                      }
-                      if (isPhoneKey(key)) {
-                        return (
-                          <PhoneField
-                            key={key}
-                            label={
-                              (FIELD_LABELS[key] || key) +
-                              (key === "hoVaTen" ? " *" : "")
-                            }
-                            value={String(
-                              (editStudent as Record<string, unknown>)[key] ?? ""
-                            )}
-                            inputClassName="min-h-11 w-full rounded-lg border border-border bg-white px-3 text-sm"
-                            onChange={(v) =>
-                              setEditStudent({
-                                ...editStudent,
-                                [key]: v,
-                              })
-                            }
-                          />
-                        );
-                      }
-                      return (
-                        <label key={key} className="text-sm">
-                          {FIELD_LABELS[key] || key}
-                          {key === "hoVaTen" ? " *" : ""}
-                          <input
-                            className="mt-1 min-h-11 w-full rounded-lg border border-border px-3"
-                            value={String(
-                              (editStudent as Record<string, unknown>)[key] ?? ""
-                            )}
-                            onChange={(e) =>
-                              setEditStudent({
-                                ...editStudent,
-                                [key]: e.target.value,
-                              })
-                            }
-                          />
-                        </label>
-                      );
-                    })}
-                  </div>
-                </section>
-              ))}
-
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void saveStudent()}
-                className="min-h-11 rounded-xl bg-primary px-4 font-semibold text-on-primary disabled:opacity-50"
-              >
-                {busy
-                  ? "Đang lưu…"
-                  : editMode === "create"
-                    ? "Tạo sinh viên"
-                    : "Lưu thay đổi thông tin"}
-              </button>
+      {tab === "create" ? (
+        <section className="mt-6 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-lg font-semibold">Nhập sinh viên</h2>
+              <p className="text-sm text-foreground/60">
+                Điền thông tin trước, giấy tờ phía dưới — rồi bấm Tạo sinh viên.
+              </p>
             </div>
+            <button
+              type="button"
+              onClick={startCreateStudent}
+              className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-border bg-surface px-4 text-sm font-semibold"
+            >
+              <Plus weight="bold" /> Làm mới form
+            </button>
+          </div>
+          {editStudent ? (
+            <StudentEditor
+              editStudent={editStudent}
+              editMode={editMode === "create" ? "create" : "edit"}
+              busy={busy}
+              uploadingKey={uploadingKey}
+              onClose={() => {
+                startCreateStudent();
+              }}
+              setEditStudent={setEditStudent}
+              setError={setError}
+              saveStudent={() => void saveStudent()}
+              uploadStudentFile={uploadStudentFile}
+              removeStudentFile={removeStudentFile}
+              downloadKey={downloadKey}
+              previewFile={previewFile}
+              hideClose
+            />
           ) : null}
         </section>
       ) : null}
@@ -1274,6 +1078,283 @@ function Info({ label, value }: { label: string; value: string }) {
     <div>
       <dt className="text-xs uppercase tracking-wide text-foreground/50">{label}</dt>
       <dd className="mt-0.5 font-semibold break-all">{value || "—"}</dd>
+    </div>
+  );
+}
+
+function StudentEditor({
+  editStudent,
+  editMode,
+  busy,
+  uploadingKey,
+  onClose,
+  setEditStudent,
+  setError,
+  saveStudent,
+  uploadStudentFile,
+  removeStudentFile,
+  downloadKey,
+  previewFile,
+  hideClose,
+}: {
+  editStudent: Student;
+  editMode: EditMode;
+  busy: boolean;
+  uploadingKey: string | null;
+  onClose: () => void;
+  setEditStudent: (s: Student) => void;
+  setError: (s: string) => void;
+  saveStudent: () => void;
+  uploadStudentFile: (fieldKey: string, fileList: FileList | null) => Promise<void>;
+  removeStudentFile: (fieldKey: string, fileKey: string) => Promise<void>;
+  downloadKey: (key: string) => Promise<void>;
+  previewFile: (file: UploadedFile) => Promise<void>;
+  hideClose?: boolean;
+}) {
+  return (
+    <div className="space-y-5 rounded-2xl border border-border bg-surface p-5">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h2 className="text-lg font-semibold">
+            {editMode === "create"
+              ? "Nhập sinh viên mới"
+              : editStudent.hoVaTen || "Hồ sơ sinh viên"}
+          </h2>
+          <p className="text-sm text-foreground/60">
+            {editMode === "create"
+              ? "Điền thông tin trước, giấy tờ phía dưới."
+              : `Mã SV: ${editStudent.maSinhVien}`}
+          </p>
+        </div>
+        {!hideClose ? (
+          <button
+            type="button"
+            className="text-sm text-foreground/60"
+            onClick={onClose}
+          >
+            Đóng
+          </button>
+        ) : null}
+      </div>
+
+      <label className="block text-sm">
+        Mã sinh viên {editMode === "create" ? "(bắt buộc)" : "(không sửa)"}
+        <input
+          className={`mt-1 min-h-11 w-full rounded-lg border border-border px-3 ${
+            editMode === "edit" ? "bg-muted/40" : ""
+          }`}
+          value={editStudent.maSinhVien}
+          readOnly={editMode === "edit"}
+          onChange={(e) => {
+            if (editMode !== "create") return;
+            const hasFiles = Object.values(editStudent.documents || {}).some(
+              (d) => (d.files || []).length > 0
+            );
+            if (hasFiles) {
+              setError(
+                "Không đổi mã SV sau khi đã upload file — xóa file hoặc tạo mới."
+              );
+              return;
+            }
+            setEditStudent({
+              ...editStudent,
+              maSinhVien: e.target.value.trim(),
+            });
+          }}
+          placeholder="VD: 51112610099"
+        />
+      </label>
+
+      {FIELD_GROUPS.map((group) => (
+        <section key={group.title}>
+          <h3 className="mb-2 font-semibold text-primary">{group.title}</h3>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {group.keys.map((key) => {
+              if (key === "ngaySinh") {
+                return (
+                  <BirthDateFields
+                    key={key}
+                    ngaySinh={String(editStudent.ngaySinh || "")}
+                    ngay={String(editStudent.ngay || "")}
+                    thang={String(editStudent.thang || "")}
+                    nam={String(editStudent.nam || "")}
+                    inputClassName="min-h-11 w-full rounded-lg border border-border bg-white px-3 text-sm"
+                    onChange={(next) =>
+                      setEditStudent({
+                        ...editStudent,
+                        ...next,
+                      })
+                    }
+                  />
+                );
+              }
+              if (isPhoneKey(key)) {
+                return (
+                  <PhoneField
+                    key={key}
+                    label={FIELD_LABELS[key] || key}
+                    value={String(
+                      (editStudent as Record<string, unknown>)[key] ?? ""
+                    )}
+                    inputClassName="min-h-11 w-full rounded-lg border border-border bg-white px-3 text-sm"
+                    onChange={(v) =>
+                      setEditStudent({
+                        ...editStudent,
+                        [key]: v,
+                      })
+                    }
+                  />
+                );
+              }
+              return (
+                <label key={key} className="text-sm">
+                  {FIELD_LABELS[key] || key}
+                  {key === "hoVaTen" ? " *" : ""}
+                  <input
+                    className="mt-1 min-h-11 w-full rounded-lg border border-border px-3"
+                    value={String(
+                      (editStudent as Record<string, unknown>)[key] ?? ""
+                    )}
+                    onChange={(e) =>
+                      setEditStudent({
+                        ...editStudent,
+                        [key]: e.target.value,
+                      })
+                    }
+                  />
+                </label>
+              );
+            })}
+          </div>
+        </section>
+      ))}
+
+      <section>
+        <h3 className="mb-2 font-semibold text-primary">
+          Giấy tờ / ảnh — Admin được bổ sung / thay thế mọi mục
+        </h3>
+        <p className="mb-3 text-sm text-foreground/60">
+          <span className="font-semibold text-emerald-700">Xanh = Đủ</span>,{" "}
+          <span className="font-semibold text-destructive">Đỏ = Thiếu</span>.
+          Admin luôn có quyền upload/thay file mọi trường (kể cả đã Đủ).
+        </p>
+        <div className="space-y-3">
+          {Object.entries(DOCUMENT_LABELS).map(([key, label]) => {
+            const slot: DocumentSlot =
+              editStudent.documents?.[key] || {
+                status: "thieu",
+                files: [],
+              };
+            const busyUpload = uploadingKey === key;
+            const isDu = slot.status === "du";
+            const isThieu = slot.status === "thieu";
+            return (
+              <div
+                key={key}
+                className={`rounded-xl border p-3 ${
+                  isDu
+                    ? "border-emerald-200 bg-emerald-50/80"
+                    : isThieu
+                      ? "border-destructive/25 bg-red-50/70"
+                      : "border-amber-200 bg-amber-50/60"
+                }`}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="font-medium">{label}</p>
+                    <span
+                      className={`mt-1 inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold text-white ${
+                        isDu
+                          ? "bg-emerald-600"
+                          : isThieu
+                            ? "bg-destructive"
+                            : "bg-amber-500"
+                      }`}
+                    >
+                      {isDu ? "Đủ" : isThieu ? "Thiếu" : "Có file"}
+                    </span>
+                    {slot.note ? (
+                      <p className="mt-1 text-xs text-foreground/55">{slot.note}</p>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      className="min-h-10 rounded-lg border border-border bg-white px-2 text-sm"
+                      value={slot.status}
+                      onChange={(e) =>
+                        setEditStudent({
+                          ...editStudent,
+                          documents: {
+                            ...(editStudent.documents || {}),
+                            [key]: {
+                              ...slot,
+                              status: e.target.value as DocumentSlot["status"],
+                            },
+                          },
+                        })
+                      }
+                    >
+                      <option value="thieu">Thiếu</option>
+                      <option value="du">Đủ</option>
+                      <option value="co_file">Có file</option>
+                    </select>
+                    <label className="inline-flex min-h-10 cursor-pointer items-center gap-1.5 rounded-lg bg-accent px-3 text-sm font-semibold text-white">
+                      <FileArrowUp size={16} weight="bold" />
+                      {busyUpload ? "Đang tải…" : "Bổ sung / thay thế"}
+                      <input
+                        type="file"
+                        accept="application/pdf,image/*,.pdf,.jpg,.jpeg,.png,.webp,.gif,.heic,.heif"
+                        multiple
+                        disabled={busy || busyUpload}
+                        className="sr-only"
+                        onChange={(e) => {
+                          void uploadStudentFile(key, e.target.files);
+                          e.target.value = "";
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {(slot.files || []).map((f) => (
+                    <div key={f.key} className="inline-flex items-center gap-1">
+                      <FileActions
+                        file={f}
+                        onDownload={() => void downloadKey(f.key)}
+                        onPreview={() => void previewFile(f)}
+                      />
+                      <button
+                        type="button"
+                        title="Xóa file"
+                        className="rounded-lg border border-border bg-white px-2 py-1.5 text-xs text-destructive"
+                        onClick={() => void removeStudentFile(key, f.key)}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ))}
+                  {!slot.files?.length ? (
+                    <span className="text-xs text-foreground/50">Chưa có file</span>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <button
+        type="button"
+        disabled={busy}
+        onClick={saveStudent}
+        className="min-h-11 rounded-xl bg-primary px-4 font-semibold text-on-primary disabled:opacity-50"
+      >
+        {busy
+          ? "Đang lưu…"
+          : editMode === "create"
+            ? "Tạo sinh viên"
+            : "Lưu thay đổi thông tin"}
+      </button>
     </div>
   );
 }
