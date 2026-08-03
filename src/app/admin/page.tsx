@@ -384,33 +384,80 @@ export default function AdminPage() {
         });
       }
 
-      setEditStudent((prev) => {
-        if (!prev) return prev;
-        const prevFiles = prev.documents?.[fieldKey]?.files || [];
-        const nextFiles = replace
-          ? uploaded.slice(0, 2)
-          : [...prevFiles, ...uploaded].slice(0, 2);
-        return {
-          ...prev,
-          documents: {
-            ...(prev.documents || {}),
-            [fieldKey]: {
-              status: "co_file",
-              files: nextFiles,
-              note: prev.documents?.[fieldKey]?.note,
-            },
-          },
-        };
-      });
-      setMessage(
-        editMode === "create"
-          ? "Đã gắn file (nhớ bấm Tạo sinh viên để lưu)."
-          : "Đã gắn file (nhớ bấm Lưu thay đổi)."
-      );
+      const prevFiles = editStudent.documents?.[fieldKey]?.files || [];
+      const nextFiles = replace
+        ? uploaded.slice(0, 2)
+        : [...prevFiles, ...uploaded].slice(0, 2);
+      const nextDocuments = {
+        ...(editStudent.documents || {}),
+        [fieldKey]: {
+          status: "co_file" as const,
+          files: nextFiles,
+          note: editStudent.documents?.[fieldKey]?.note,
+        },
+      };
+
+      // Đã có SV trong hệ thống → lưu file ngay vào hồ sơ chính thức
+      if (editMode === "edit") {
+        const res = await fetch(`/api/admin/students/${encodeURIComponent(ma)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ documents: nextDocuments }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Lưu file thất bại");
+        setEditStudent(data.student);
+        setMessage("Đã upload và lưu tài liệu vào hồ sơ sinh viên.");
+      } else {
+        setEditStudent({
+          ...editStudent,
+          documents: nextDocuments,
+        });
+        setMessage("Đã gắn file (nhớ bấm Tạo sinh viên để lưu hồ sơ).");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Lỗi upload");
     } finally {
       setUploadingKey(null);
+    }
+  }
+
+  async function removeStudentFile(fieldKey: string, fileKey: string) {
+    if (!editStudent) return;
+    const ma = String(editStudent.maSinhVien || "").trim();
+    const slot = editStudent.documents?.[fieldKey];
+    if (!slot) return;
+    const nextFiles = (slot.files || []).filter((f) => f.key !== fileKey);
+    const nextDocuments = {
+      ...(editStudent.documents || {}),
+      [fieldKey]: {
+        ...slot,
+        status: nextFiles.length ? ("co_file" as const) : ("thieu" as const),
+        files: nextFiles,
+      },
+    };
+
+    if (editMode === "create" || !ma) {
+      setEditStudent({ ...editStudent, documents: nextDocuments });
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/admin/students/${encodeURIComponent(ma)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documents: nextDocuments }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Xóa file thất bại");
+      setEditStudent(data.student);
+      setMessage("Đã xóa file khỏi hồ sơ.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Lỗi");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -906,38 +953,13 @@ export default function AdminPage() {
                 />
               </label>
 
-              {FIELD_GROUPS.map((group) => (
-                <section key={group.title}>
-                  <h3 className="mb-2 font-semibold text-primary">{group.title}</h3>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {group.keys.map((key) => (
-                      <label key={key} className="text-sm">
-                        {FIELD_LABELS[key] || key}
-                        {key === "hoVaTen" ? " *" : ""}
-                        <input
-                          className="mt-1 min-h-11 w-full rounded-lg border border-border px-3"
-                          value={String(
-                            (editStudent as Record<string, unknown>)[key] ?? ""
-                          )}
-                          onChange={(e) =>
-                            setEditStudent({
-                              ...editStudent,
-                              [key]: e.target.value,
-                            })
-                          }
-                        />
-                      </label>
-                    ))}
-                  </div>
-                </section>
-              ))}
-
               <section>
                 <h3 className="mb-2 font-semibold text-primary">
-                  Giấy tờ / ảnh upload
+                  Giấy tờ / ảnh — Admin upload thay sinh viên
                 </h3>
                 <p className="mb-3 text-sm text-foreground/60">
-                  Tối đa 2 file/trường (PDF hoặc ảnh). Cần có mã SV trước khi upload.
+                  Tối đa 2 file/trường (PDF hoặc ảnh). Khi đang sửa SV có sẵn, file
+                  được lưu ngay vào hồ sơ chính thức sau khi upload.
                 </p>
                 <div className="space-y-3">
                   {Object.entries(DOCUMENT_LABELS).map(([key, label]) => {
@@ -982,9 +1004,13 @@ export default function AdminPage() {
                               <option value="du">Đủ</option>
                               <option value="co_file">Có file</option>
                             </select>
-                            <label className="inline-flex min-h-10 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-white px-3 text-sm font-semibold">
-                              <FileArrowUp size={16} />
-                              {busyUpload ? "Đang tải…" : "Upload"}
+                            <label className="inline-flex min-h-10 cursor-pointer items-center gap-1.5 rounded-lg bg-accent px-3 text-sm font-semibold text-white">
+                              <FileArrowUp size={16} weight="bold" />
+                              {busyUpload
+                                ? "Đang tải…"
+                                : (slot.files || []).length
+                                  ? "Bổ sung / thay"
+                                  : "Upload tài liệu"}
                               <input
                                 type="file"
                                 accept="application/pdf,image/*,.pdf,.jpg,.jpeg,.png,.webp,.gif,.heic,.heif"
@@ -1001,16 +1027,25 @@ export default function AdminPage() {
                         </div>
                         <div className="mt-2 flex flex-wrap gap-2">
                           {(slot.files || []).map((f) => (
-                            <FileActions
-                              key={f.key}
-                              file={f}
-                              onDownload={() => void downloadKey(f.key)}
-                              onPreview={() => void previewFile(f)}
-                            />
+                            <div key={f.key} className="inline-flex items-center gap-1">
+                              <FileActions
+                                file={f}
+                                onDownload={() => void downloadKey(f.key)}
+                                onPreview={() => void previewFile(f)}
+                              />
+                              <button
+                                type="button"
+                                title="Xóa file"
+                                className="rounded-lg border border-border bg-white px-2 py-1.5 text-xs text-destructive"
+                                onClick={() => void removeStudentFile(key, f.key)}
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
                           ))}
                           {!slot.files?.length ? (
                             <span className="text-xs text-foreground/50">
-                              Chưa có file
+                              Chưa có file — bấm Upload tài liệu
                             </span>
                           ) : null}
                         </div>
@@ -1019,6 +1054,32 @@ export default function AdminPage() {
                   })}
                 </div>
               </section>
+
+              {FIELD_GROUPS.map((group) => (
+                <section key={group.title}>
+                  <h3 className="mb-2 font-semibold text-primary">{group.title}</h3>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {group.keys.map((key) => (
+                      <label key={key} className="text-sm">
+                        {FIELD_LABELS[key] || key}
+                        {key === "hoVaTen" ? " *" : ""}
+                        <input
+                          className="mt-1 min-h-11 w-full rounded-lg border border-border px-3"
+                          value={String(
+                            (editStudent as Record<string, unknown>)[key] ?? ""
+                          )}
+                          onChange={(e) =>
+                            setEditStudent({
+                              ...editStudent,
+                              [key]: e.target.value,
+                            })
+                          }
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </section>
+              ))}
 
               <button
                 type="button"
@@ -1030,7 +1091,7 @@ export default function AdminPage() {
                   ? "Đang lưu…"
                   : editMode === "create"
                     ? "Tạo sinh viên"
-                    : "Lưu thay đổi"}
+                    : "Lưu thay đổi thông tin"}
               </button>
             </div>
           ) : null}

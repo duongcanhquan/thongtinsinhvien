@@ -53,9 +53,18 @@ export async function PATCH(req: Request, { params }: Params) {
       next.documents = { ...(student.documents || {}) };
       for (const [key, slot] of Object.entries(body.documents)) {
         if (!DOCUMENT_KEYS.has(key)) continue;
+        const files = (slot.files || []).slice(0, 2);
+        for (const file of files) {
+          if (!String(file.key || "").startsWith(`students/${id}/${key}/`)) {
+            return NextResponse.json(
+              { error: `File không hợp lệ cho trường ${key}` },
+              { status: 400 }
+            );
+          }
+        }
         const entry: DocumentSlot = {
-          status: slot.files?.length ? "co_file" : slot.status,
-          files: (slot.files || []).slice(0, 2),
+          status: files.length ? "co_file" : slot.status,
+          files,
         };
         if (slot.note) entry.note = String(slot.note);
         next.documents[key] = entry;
