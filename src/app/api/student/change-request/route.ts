@@ -35,11 +35,12 @@ export async function POST(req: Request) {
       for (const [key, slot] of Object.entries(body.proposedDocuments)) {
         if (!DOCUMENT_KEYS.has(key)) continue;
         const files = (slot.files || []).slice(0, 2);
-        proposedDocuments[key] = {
+        const entry: DocumentSlot = {
           status: files.length ? "co_file" : slot.status || "du",
           files,
-          note: slot.note,
         };
+        if (slot.note) entry.note = String(slot.note);
+        proposedDocuments[key] = entry;
       }
     }
 

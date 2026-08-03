@@ -53,11 +53,12 @@ export async function PATCH(req: Request, { params }: Params) {
       next.documents = { ...(student.documents || {}) };
       for (const [key, slot] of Object.entries(body.documents)) {
         if (!DOCUMENT_KEYS.has(key)) continue;
-        next.documents[key] = {
+        const entry: DocumentSlot = {
           status: slot.files?.length ? "co_file" : slot.status,
           files: (slot.files || []).slice(0, 2),
-          note: slot.note,
         };
+        if (slot.note) entry.note = String(slot.note);
+        next.documents[key] = entry;
       }
     }
     next.updatedAt = new Date().toISOString();

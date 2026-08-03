@@ -1,4 +1,4 @@
-import { cert, getApps, initializeApp, type App } from "firebase-admin/app";
+import { getApps, initializeApp, cert, type App } from "firebase-admin/app";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
 
 type ServiceAccountFields = {
@@ -11,7 +11,6 @@ function fromJsonEnv(): ServiceAccountFields | null {
   let raw = process.env.FIREBASE_SERVICE_ACCOUNT_KEY?.trim();
   if (!raw) return null;
 
-  // Vercel sometimes wraps value in extra quotes
   if (
     (raw.startsWith("'") && raw.endsWith("'")) ||
     (raw.startsWith('"') && raw.endsWith('"'))
@@ -82,6 +81,17 @@ function getAdminApp(): App {
   });
 }
 
+let firestoreReady = false;
+
 export function getDb(): Firestore {
-  return getFirestore(getAdminApp());
+  const db = getFirestore(getAdminApp());
+  if (!firestoreReady) {
+    try {
+      db.settings({ ignoreUndefinedProperties: true });
+    } catch {
+      // settings() may already have been applied in this process
+    }
+    firestoreReady = true;
+  }
+  return db;
 }

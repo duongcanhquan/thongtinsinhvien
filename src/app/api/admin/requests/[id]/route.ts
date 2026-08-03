@@ -92,11 +92,13 @@ function mergeDocuments(
   for (const [key, slot] of Object.entries(proposed)) {
     if (!DOCUMENT_KEYS.has(key)) continue;
     const files = (slot.files || []).slice(0, 2);
-    next[key] = {
+    const note = slot.note ?? next[key]?.note;
+    const entry: DocumentSlot = {
       status: files.length ? "co_file" : slot.status || next[key]?.status || "du",
       files: files.length ? files : next[key]?.files || [],
-      note: slot.note ?? next[key]?.note,
     };
+    if (note) entry.note = note;
+    next[key] = entry;
   }
   return next;
 }

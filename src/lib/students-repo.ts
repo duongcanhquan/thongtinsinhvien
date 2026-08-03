@@ -24,6 +24,22 @@ function emptyDocuments(): Record<string, DocumentSlot> {
   return docs;
 }
 
+/** Remove undefined recursively — Firestore rejects undefined values. */
+export function stripUndefined<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((item) => stripUndefined(item)) as T;
+  }
+  if (value && typeof value === "object" && !(value instanceof Date)) {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (v === undefined) continue;
+      out[k] = stripUndefined(v);
+    }
+    return out as T;
+  }
+  return value;
+}
+
 export function studentFromFields(
   fields: Record<string, string>
 ): Student | null {
@@ -31,27 +47,32 @@ export function studentFromFields(
   if (!maSinhVien) return null;
 
   const documents = emptyDocuments();
-  const student: Student = {
+  const student: Record<string, unknown> = {
     maSinhVien,
-    hoVaTen: cellToString(fields.hoVaTen),
+    hoVaTen: cellToString(fields.hoVaTen) || "",
     documents,
   };
 
-  for (const [key, value] of Object.entries(fields)) {
+  for (const [key, raw] of Object.entries(fields)) {
     if (key === "maSinhVien" || key === "hoVaTen") continue;
+    const value = cellToString(raw);
+
     if (DOCUMENT_KEYS.has(key)) {
-      documents[key] = {
+      const slot: DocumentSlot = {
         status: inferDocumentStatus(value),
         files: [],
-        note: value || undefined,
       };
+      if (value) slot.note = value;
+      documents[key] = slot;
       continue;
     }
-    (student as Record<string, unknown>)[key] = value;
+
+    // Always store string (never undefined) for scalar fields
+    student[key] = value;
   }
 
   student.documents = documents;
-  return student;
+  return stripUndefined(student as Student);
 }
 
 export function toIdentity(student: Student): StudentIdentity {
@@ -105,17 +126,17 @@ export async function getStudent(maSinhVien: string): Promise<Student | null> {
 export async function upsertStudent(student: Student) {
   const db = getDb();
   const now = new Date().toISOString();
-  await db
-    .collection("students")
-    .doc(student.maSinhVien)
-    .set(
-      {
-        ...student,
-        updatedAt: now,
-        createdAt: student.createdAt || now,
-      },
-      { merge: true }
-    );
+  const payload = stripUndefined({
+    ...student,
+    maSinhVien: student.maSinhVien,
+    hoVaTen: student.hoVaTen || "",
+    documents: student.documents || emptyDocuments(),
+    updatedAt: now,
+    createdAt: student.createdAt || now,
+  });
+  await db.collection("students").doc(student.maSinhVien).set(payload, {
+    merge: true,
+  });
 }
 
 export async function studentExists(maSinhVien: string) {
@@ -135,7 +156,10 @@ export async function getChangeRequest(
 
 export async function saveChangeRequest(request: ChangeRequest) {
   const db = getDb();
-  await db.collection("changeRequests").doc(request.maSinhVien).set(request);
+  await db
+    .collection("changeRequests")
+    .doc(request.maSinhVien)
+    .set(stripUndefined(request));
 }
 
 export async function deleteChangeRequest(maSinhVien: string) {
