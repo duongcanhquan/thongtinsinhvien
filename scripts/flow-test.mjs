@@ -122,7 +122,7 @@ async function main() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query: ma }),
     });
-    if (res.ok && (json.results || []).some((r) => r.maSinhVien === ma)) {
+    if (res.ok && (json.matches || json.results || []).some((r) => r.maSinhVien === ma)) {
       pass("Student search", ma);
     } else fail("Student search", json?.error || JSON.stringify(json));
   }
