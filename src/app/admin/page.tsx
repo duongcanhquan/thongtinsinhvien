@@ -4,8 +4,10 @@ import {
   Check,
   DownloadSimple,
   Eye,
+  FileArrowUp,
   FileXls,
   MagnifyingGlass,
+  Plus,
   SignOut,
   X,
 } from "@phosphor-icons/react";
@@ -20,6 +22,7 @@ import {
 import type { ChangeRequest, DocumentSlot, Student, UploadedFile } from "@/lib/types";
 
 type Tab = "requests" | "students" | "import";
+type EditMode = "create" | "edit";
 
 const FIELD_GROUPS: { title: string; keys: readonly string[] }[] = [
   {
@@ -95,9 +98,12 @@ export default function AdminPage() {
   const [requestStudent, setRequestStudent] = useState<Student | null>(null);
   const [editDraft, setEditDraft] = useState<Record<string, string>>({});
   const [editStudent, setEditStudent] = useState<Student | null>(null);
+  const [editMode, setEditMode] = useState<EditMode>("edit");
+  const [uploadingKey, setUploadingKey] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [importResult, setImportResult] = useState("");
+  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
@@ -217,16 +223,26 @@ export default function AdminPage() {
   async function openStudent(s: Student) {
     setBusy(true);
     setError("");
+    setMessage("");
     try {
       const res = await fetch(`/api/admin/students/${encodeURIComponent(s.maSinhVien)}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Không tải hồ sơ");
+      setEditMode("edit");
       setEditStudent(data.student);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Lỗi");
     } finally {
       setBusy(false);
     }
+  }
+
+  function startCreateStudent() {
+    setError("");
+    setMessage("");
+    setEditMode("create");
+    setEditStudent(blankStudent());
+    setTab("students");
   }
 
   async function decide(action: "approve" | "reject" | "edit_approve") {
@@ -259,28 +275,142 @@ export default function AdminPage() {
 
   async function saveStudent() {
     if (!editStudent) return;
+    const ma = String(editStudent.maSinhVien || "").trim();
+    if (!ma) {
+      setError("Nhập mã sinh viên");
+      return;
+    }
+    if (!String(editStudent.hoVaTen || "").trim()) {
+      setError("Nhập họ và tên");
+      return;
+    }
+
     setBusy(true);
+    setError("");
+    setMessage("");
     try {
       const fields: Record<string, string> = {};
       for (const key of ADMIN_EDITABLE_FIELDS) {
         fields[key] = String((editStudent as Record<string, unknown>)[key] ?? "");
       }
-      const res = await fetch(`/api/admin/students/${editStudent.maSinhVien}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fields,
-          documents: editStudent.documents,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Lưu thất bại");
-      setEditStudent(data.student);
-      await searchStudents();
+
+      if (editMode === "create") {
+        const res = await fetch("/api/admin/students", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            maSinhVien: ma,
+            fields,
+            documents: editStudent.documents,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Tạo thất bại");
+        setEditMode("edit");
+        setEditStudent(data.student);
+        setMessage("Đã tạo sinh viên thành công.");
+        setQ(ma);
+        await searchStudents();
+      } else {
+        const res = await fetch(`/api/admin/students/${encodeURIComponent(ma)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fields,
+            documents: editStudent.documents,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Lưu thất bại");
+        setEditStudent(data.student);
+        setMessage("Đã lưu thay đổi.");
+        await searchStudents();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Lỗi");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function uploadStudentFile(fieldKey: string, fileList: FileList | null) {
+    if (!fileList?.length || !editStudent) return;
+    const ma = String(editStudent.maSinhVien || "").trim();
+    if (!ma) {
+      setError("Nhập mã sinh viên trước khi upload tài liệu");
+      return;
+    }
+
+    const existing = editStudent.documents?.[fieldKey]?.files || [];
+    const replace = existing.length >= 2;
+    const room = Math.max(0, 2 - existing.length);
+    const incoming = Array.from(fileList).slice(0, replace ? 2 : room || 2);
+    if (!incoming.length) return;
+
+    setUploadingKey(fieldKey);
+    setError("");
+    try {
+      const uploaded: UploadedFile[] = [];
+      for (const file of incoming) {
+        const contentType =
+          file.type || guessClientContentType(file.name) || "application/octet-stream";
+        const metaRes = await fetch("/api/upload-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            maSinhVien: ma,
+            fieldKey,
+            filename: file.name,
+            contentType,
+            size: file.size,
+          }),
+        });
+        const meta = await metaRes.json();
+        if (!metaRes.ok) throw new Error(meta.error || "Không tạo được URL upload");
+
+        const put = await fetch(meta.url, {
+          method: "PUT",
+          headers: { "Content-Type": meta.contentType || contentType },
+          body: file,
+        });
+        if (!put.ok) throw new Error(`Tải file thất bại: ${file.name}`);
+
+        uploaded.push({
+          key: meta.key,
+          name: meta.name,
+          size: meta.size,
+          contentType: meta.contentType || contentType,
+          uploadedAt: meta.uploadedAt,
+        });
+      }
+
+      setEditStudent((prev) => {
+        if (!prev) return prev;
+        const prevFiles = prev.documents?.[fieldKey]?.files || [];
+        const nextFiles = replace
+          ? uploaded.slice(0, 2)
+          : [...prevFiles, ...uploaded].slice(0, 2);
+        return {
+          ...prev,
+          documents: {
+            ...(prev.documents || {}),
+            [fieldKey]: {
+              status: "co_file",
+              files: nextFiles,
+              note: prev.documents?.[fieldKey]?.note,
+            },
+          },
+        };
+      });
+      setMessage(
+        editMode === "create"
+          ? "Đã gắn file (nhớ bấm Tạo sinh viên để lưu)."
+          : "Đã gắn file (nhớ bấm Lưu thay đổi)."
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Lỗi upload");
+    } finally {
+      setUploadingKey(null);
     }
   }
 
@@ -441,6 +571,11 @@ export default function AdminPage() {
       {error ? (
         <p className="mt-4 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
           {error}
+        </p>
+      ) : null}
+      {message ? (
+        <p className="mt-4 rounded-xl border border-accent/20 bg-accent-soft px-4 py-3 text-sm font-medium text-accent">
+          {message}
         </p>
       ) : null}
 
@@ -655,23 +790,32 @@ export default function AdminPage() {
 
       {tab === "students" ? (
         <section className="mt-6 space-y-4">
-          <form
-            onSubmit={(e) => void searchStudents(e)}
-            className="flex flex-col gap-2 sm:flex-row"
-          >
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Tìm theo tên / email / SĐT / CCCD / mã SV"
-              className="min-h-12 flex-1 rounded-xl border border-border px-4"
-            />
-            <button
-              type="submit"
-              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-primary px-5 font-semibold text-on-primary"
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
+            <form
+              onSubmit={(e) => void searchStudents(e)}
+              className="flex flex-1 flex-col gap-2 sm:flex-row"
             >
-              <MagnifyingGlass /> Tìm
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Tìm theo tên / email / SĐT / CCCD / mã SV"
+                className="min-h-12 flex-1 rounded-xl border border-border px-4"
+              />
+              <button
+                type="submit"
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-primary px-5 font-semibold text-on-primary"
+              >
+                <MagnifyingGlass /> Tìm
+              </button>
+            </form>
+            <button
+              type="button"
+              onClick={startCreateStudent}
+              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-accent px-5 font-semibold text-white"
+            >
+              <Plus weight="bold" /> Nhập tay SV
             </button>
-          </form>
+          </div>
 
           <div className="overflow-x-auto rounded-2xl border border-border bg-surface">
             <table className="min-w-full text-left text-sm">
@@ -710,26 +854,55 @@ export default function AdminPage() {
             <div className="space-y-5 rounded-2xl border border-border bg-surface p-5">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
-                  <h2 className="text-lg font-semibold">{editStudent.hoVaTen}</h2>
-                  <p className="font-mono text-sm text-foreground/60">
-                    Mã SV: {editStudent.maSinhVien}
+                  <h2 className="text-lg font-semibold">
+                    {editMode === "create"
+                      ? "Nhập tay sinh viên mới"
+                      : editStudent.hoVaTen || "Hồ sơ sinh viên"}
+                  </h2>
+                  <p className="text-sm text-foreground/60">
+                    {editMode === "create"
+                      ? "Điền thông tin + upload giấy tờ, rồi bấm Tạo sinh viên."
+                      : `Mã SV: ${editStudent.maSinhVien}`}
                   </p>
                 </div>
                 <button
                   type="button"
                   className="text-sm text-foreground/60"
-                  onClick={() => setEditStudent(null)}
+                  onClick={() => {
+                    setEditStudent(null);
+                    setEditMode("edit");
+                    setMessage("");
+                  }}
                 >
                   Đóng
                 </button>
               </div>
 
               <label className="block text-sm">
-                Mã sinh viên (không sửa)
+                Mã sinh viên {editMode === "create" ? "(bắt buộc)" : "(không sửa)"}
                 <input
-                  className="mt-1 min-h-11 w-full rounded-lg border border-border bg-muted/40 px-3"
+                  className={`mt-1 min-h-11 w-full rounded-lg border border-border px-3 ${
+                    editMode === "edit" ? "bg-muted/40" : ""
+                  }`}
                   value={editStudent.maSinhVien}
-                  readOnly
+                  readOnly={editMode === "edit"}
+                  onChange={(e) => {
+                    if (editMode !== "create") return;
+                    const hasFiles = Object.values(editStudent.documents || {}).some(
+                      (d) => (d.files || []).length > 0
+                    );
+                    if (hasFiles) {
+                      setError(
+                        "Không đổi mã SV sau khi đã upload file — xóa file hoặc tạo mới."
+                      );
+                      return;
+                    }
+                    setEditStudent({
+                      ...editStudent,
+                      maSinhVien: e.target.value.trim(),
+                    });
+                  }}
+                  placeholder="VD: 51112610099"
                 />
               </label>
 
@@ -740,6 +913,7 @@ export default function AdminPage() {
                     {group.keys.map((key) => (
                       <label key={key} className="text-sm">
                         {FIELD_LABELS[key] || key}
+                        {key === "hoVaTen" ? " *" : ""}
                         <input
                           className="mt-1 min-h-11 w-full rounded-lg border border-border px-3"
                           value={String(
@@ -760,8 +934,11 @@ export default function AdminPage() {
 
               <section>
                 <h3 className="mb-2 font-semibold text-primary">
-                  Giấy tờ / ảnh đã upload
+                  Giấy tờ / ảnh upload
                 </h3>
+                <p className="mb-3 text-sm text-foreground/60">
+                  Tối đa 2 file/trường (PDF hoặc ảnh). Cần có mã SV trước khi upload.
+                </p>
                 <div className="space-y-3">
                   {Object.entries(DOCUMENT_LABELS).map(([key, label]) => {
                     const slot: DocumentSlot =
@@ -769,6 +946,7 @@ export default function AdminPage() {
                         status: "thieu",
                         files: [],
                       };
+                    const busyUpload = uploadingKey === key;
                     return (
                       <div
                         key={key}
@@ -782,26 +960,44 @@ export default function AdminPage() {
                               {slot.note ? ` · ${slot.note}` : ""}
                             </p>
                           </div>
-                          <select
-                            className="min-h-10 rounded-lg border border-border bg-white px-2 text-sm"
-                            value={slot.status}
-                            onChange={(e) =>
-                              setEditStudent({
-                                ...editStudent,
-                                documents: {
-                                  ...(editStudent.documents || {}),
-                                  [key]: {
-                                    ...slot,
-                                    status: e.target.value as DocumentSlot["status"],
+                          <div className="flex flex-wrap items-center gap-2">
+                            <select
+                              className="min-h-10 rounded-lg border border-border bg-white px-2 text-sm"
+                              value={slot.status}
+                              onChange={(e) =>
+                                setEditStudent({
+                                  ...editStudent,
+                                  documents: {
+                                    ...(editStudent.documents || {}),
+                                    [key]: {
+                                      ...slot,
+                                      status: e.target
+                                        .value as DocumentSlot["status"],
+                                    },
                                   },
-                                },
-                              })
-                            }
-                          >
-                            <option value="thieu">Thiếu</option>
-                            <option value="du">Đủ</option>
-                            <option value="co_file">Có file</option>
-                          </select>
+                                })
+                              }
+                            >
+                              <option value="thieu">Thiếu</option>
+                              <option value="du">Đủ</option>
+                              <option value="co_file">Có file</option>
+                            </select>
+                            <label className="inline-flex min-h-10 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-white px-3 text-sm font-semibold">
+                              <FileArrowUp size={16} />
+                              {busyUpload ? "Đang tải…" : "Upload"}
+                              <input
+                                type="file"
+                                accept="application/pdf,image/*,.pdf,.jpg,.jpeg,.png,.webp,.gif,.heic,.heif"
+                                multiple
+                                disabled={busy || busyUpload}
+                                className="sr-only"
+                                onChange={(e) => {
+                                  void uploadStudentFile(key, e.target.files);
+                                  e.target.value = "";
+                                }}
+                              />
+                            </label>
+                          </div>
                         </div>
                         <div className="mt-2 flex flex-wrap gap-2">
                           {(slot.files || []).map((f) => (
@@ -813,7 +1009,9 @@ export default function AdminPage() {
                             />
                           ))}
                           {!slot.files?.length ? (
-                            <span className="text-xs text-foreground/50">Chưa có file</span>
+                            <span className="text-xs text-foreground/50">
+                              Chưa có file
+                            </span>
                           ) : null}
                         </div>
                       </div>
@@ -828,7 +1026,11 @@ export default function AdminPage() {
                 onClick={() => void saveStudent()}
                 className="min-h-11 rounded-xl bg-primary px-4 font-semibold text-on-primary disabled:opacity-50"
               >
-                Lưu thay đổi
+                {busy
+                  ? "Đang lưu…"
+                  : editMode === "create"
+                    ? "Tạo sinh viên"
+                    : "Lưu thay đổi"}
               </button>
             </div>
           ) : null}
@@ -905,6 +1107,37 @@ function Info({ label, value }: { label: string; value: string }) {
       <dd className="mt-0.5 font-semibold break-all">{value || "—"}</dd>
     </div>
   );
+}
+
+function blankStudent(): Student {
+  const documents: Record<string, DocumentSlot> = {};
+  for (const key of Object.keys(DOCUMENT_LABELS)) {
+    documents[key] = { status: "thieu", files: [] };
+  }
+  const student: Student = {
+    maSinhVien: "",
+    hoVaTen: "",
+    documents,
+  };
+  for (const key of ADMIN_EDITABLE_FIELDS) {
+    (student as Record<string, unknown>)[key] = "";
+  }
+  return student;
+}
+
+function guessClientContentType(filename: string) {
+  const ext = filename.split(".").pop()?.toLowerCase() || "";
+  const map: Record<string, string> = {
+    pdf: "application/pdf",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    webp: "image/webp",
+    gif: "image/gif",
+    heic: "image/heic",
+    heif: "image/heif",
+  };
+  return map[ext] || "";
 }
 
 function FileActions({

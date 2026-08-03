@@ -24,6 +24,8 @@ function emptyDocuments(): Record<string, DocumentSlot> {
   return docs;
 }
 
+export { emptyDocuments };
+
 /** Remove undefined recursively — Firestore rejects undefined values. */
 export function stripUndefined<T>(value: T): T {
   if (Array.isArray(value)) {
