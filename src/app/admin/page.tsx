@@ -281,15 +281,18 @@ export default function AdminPage() {
     if (!selected) return;
     setBusy(true);
     setError("");
+    setMessage("");
     try {
       const body: Record<string, unknown> = { action, adminNote: note };
       if (action === "edit_approve") {
-        // Chỉ gửi các trường admin đang xem/sửa (diff + giá trị draft)
+        // Gửi đủ đề xuất từ request + overlay admin đang sửa trên UI
         const fields: Record<string, string> = {};
-        for (const key of changedKeys) {
-          fields[key] = editDraft[key] ?? "";
+        for (const [k, v] of Object.entries(selected.proposedFields || {})) {
+          fields[k] = String(v ?? "");
         }
-        // Cho phép admin chỉnh thêm bất kỳ key nào trong draft nếu khác bản chính thức
+        for (const key of changedKeys) {
+          fields[key] = editDraft[key] ?? fields[key] ?? "";
+        }
         if (requestStudent) {
           for (const key of STUDENT_EDITABLE_FIELDS) {
             const draft = editDraft[key] ?? "";
@@ -309,6 +312,14 @@ export default function AdminPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Thất bại");
+      const applied = (data.appliedFields || []) as string[];
+      setMessage(
+        data.rejected
+          ? "Đã từ chối — giữ nguyên dữ liệu cũ."
+          : applied.length
+            ? `Đã duyệt và cập nhật chính thức: ${applied.join(", ")}`
+            : "Đã duyệt yêu cầu."
+      );
       closeRequestDetail();
       await refreshRequests();
     } catch (err) {

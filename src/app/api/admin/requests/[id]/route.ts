@@ -10,7 +10,7 @@ type Params = { params: Promise<{ id: string }> };
 /**
  * Admin là cổng cuối:
  * - reject: xóa request, KHÔNG đụng bản ghi sinh viên chính thức
- * - approve / edit_approve: ghi đề xuất (có thể chỉnh bởi admin) vào official rồi xóa request
+ * - approve / edit_approve: ghi đề xuất vào official rồi xóa request
  */
 export async function POST(req: Request, { params }: Params) {
   try {
@@ -35,11 +35,78 @@ export async function POST(req: Request, { params }: Params) {
     const requestRef = db.collection("changeRequests").doc(maSinhVien);
     const studentRef = db.collection("students").doc(maSinhVien);
 
+    // Đọc ngoài transaction trước để trả lỗi rõ; ghi trong transaction
+    const [reqSnap0, stuSnap0] = await Promise.all([
+      requestRef.get(),
+      studentRef.get(),
+    ]);
+
+    if (!reqSnap0.exists) {
+      return NextResponse.json({ error: "Không có request pending" }, { status: 404 });
+    }
+    const existing0 = reqSnap0.data() as ChangeRequest;
+    if (existing0.status !== "pending") {
+      return NextResponse.json({ error: "Không có request pending" }, { status: 404 });
+    }
+    if (!stuSnap0.exists) {
+      return NextResponse.json({ error: "Không tìm thấy sinh viên" }, { status: 404 });
+    }
+
+    if (body.action === "reject") {
+      await requestRef.delete();
+      return NextResponse.json({ ok: true, rejected: true });
+    }
+
+    // Xây patch trường: ưu tiên đề xuất đã lưu trên server, overlay chỉnh sửa của admin
+    const fromRequest = sanitizeFields(existing0.proposedFields);
+    const fromAdmin =
+      body.action === "edit_approve" ? sanitizeFields(body.proposedFields) : {};
+    const fieldsToApply = { ...fromRequest, ...fromAdmin };
+
+    const docsFromRequest = existing0.proposedDocuments || {};
+    const docsFromAdmin =
+      body.action === "edit_approve" &&
+      body.proposedDocuments &&
+      Object.keys(body.proposedDocuments).length > 0
+        ? body.proposedDocuments
+        : null;
+    const docsToApply = docsFromAdmin || docsFromRequest;
+
+    for (const [key, slot] of Object.entries(docsToApply)) {
+      if (!DOCUMENT_KEYS.has(key)) continue;
+      for (const file of slot.files || []) {
+        if (!String(file.key || "").startsWith(`students/${maSinhVien}/${key}/`)) {
+          return NextResponse.json(
+            { error: `File không hợp lệ: ${key}` },
+            { status: 400 }
+          );
+        }
+      }
+    }
+
+    const appliedKeys = Object.keys(fieldsToApply);
+    if (appliedKeys.length === 0 && Object.keys(docsToApply).length === 0) {
+      // Confirm không đổi gì — vẫn xóa request
+      if (existing0.intent === "confirm") {
+        await requestRef.delete();
+        return NextResponse.json({
+          ok: true,
+          student: { ...(stuSnap0.data() as Student), maSinhVien },
+          appliedFields: [],
+        });
+      }
+      return NextResponse.json(
+        {
+          error:
+            "Không có trường/file nào để duyệt. Thử tải lại trang hoặc yêu cầu sinh viên gửi lại.",
+        },
+        { status: 400 }
+      );
+    }
+
     const result = await db.runTransaction(async (tx) => {
-      const [reqSnap, stuSnap] = await Promise.all([
-        tx.get(requestRef),
-        tx.get(studentRef),
-      ]);
+      const reqSnap = await tx.get(requestRef);
+      const stuSnap = await tx.get(studentRef);
 
       if (!reqSnap.exists) {
         throw Object.assign(new Error("Không có request pending"), { status: 404 });
@@ -48,66 +115,61 @@ export async function POST(req: Request, { params }: Params) {
       if (existing.status !== "pending") {
         throw Object.assign(new Error("Không có request pending"), { status: 404 });
       }
-
       if (!stuSnap.exists) {
         throw Object.assign(new Error("Không tìm thấy sinh viên"), { status: 404 });
       }
+
       const student = {
         ...(stuSnap.data() as Student),
         maSinhVien: stuSnap.id,
       };
 
-      // REJECT — giữ nguyên hồ sơ chính thức
-      if (body.action === "reject") {
-        tx.delete(requestRef);
-        return { rejected: true as const };
-      }
-
-      const fieldOverlay = sanitizeFields(body.proposedFields);
-      const fields =
-        body.action === "edit_approve" && body.proposedFields
-          ? { ...existing.proposedFields, ...fieldOverlay }
-          : existing.proposedFields;
-
-      const hasClientDocs =
+      // Re-resolve inside transaction (source of truth = Firestore request)
+      const txFields = {
+        ...sanitizeFields(existing.proposedFields),
+        ...sanitizeFields(
+          body.action === "edit_approve" ? body.proposedFields : undefined
+        ),
+      };
+      const txDocs =
         body.action === "edit_approve" &&
         body.proposedDocuments &&
-        Object.keys(body.proposedDocuments).length > 0;
+        Object.keys(body.proposedDocuments).length > 0
+          ? body.proposedDocuments
+          : existing.proposedDocuments || {};
 
-      const docs = hasClientDocs
-        ? body.proposedDocuments!
-        : existing.proposedDocuments || {};
-
-      // Validate file ownership before writing official
-      for (const [key, slot] of Object.entries(docs)) {
-        if (!DOCUMENT_KEYS.has(key)) continue;
-        for (const file of slot.files || []) {
-          if (!String(file.key || "").startsWith(`students/${maSinhVien}/${key}/`)) {
-            throw Object.assign(new Error(`File không hợp lệ: ${key}`), {
-              status: 400,
-            });
-          }
-        }
-      }
-
-      const next: Student = stripUndefined({
+      const next = stripUndefined({
         ...student,
-        ...sanitizeFields(fields),
+        ...txFields,
         maSinhVien: student.maSinhVien,
-        documents: mergeDocuments(student.documents || {}, docs),
+        documents: mergeDocuments(student.documents || {}, txDocs),
         updatedAt: new Date().toISOString(),
         createdAt: student.createdAt || new Date().toISOString(),
-      });
+      }) as Student;
 
-      tx.set(studentRef, next, { merge: true });
+      // Ghi đè toàn bộ document (không merge) để chắc chắn trường chính thức được cập nhật
+      tx.set(studentRef, next);
       tx.delete(requestRef);
-      return { rejected: false as const, student: next };
+
+      return {
+        student: next,
+        appliedFields: Object.keys(txFields),
+        appliedDocs: Object.keys(txDocs),
+      };
     });
 
-    if (result.rejected) {
-      return NextResponse.json({ ok: true, rejected: true });
-    }
-    return NextResponse.json({ ok: true, student: result.student });
+    // Đọc lại để xác nhận đã ghi
+    const verify = await studentRef.get();
+    const verified = verify.exists
+      ? ({ ...(verify.data() as Student), maSinhVien: verify.id } as Student)
+      : result.student;
+
+    return NextResponse.json({
+      ok: true,
+      student: verified,
+      appliedFields: result.appliedFields,
+      appliedDocs: result.appliedDocs,
+    });
   } catch (e) {
     const status =
       e && typeof e === "object" && "status" in e
