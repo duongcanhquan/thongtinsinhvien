@@ -85,7 +85,10 @@ export function toIdentity(student: Student): StudentIdentity {
   };
 }
 
-export async function findStudentsByQuery(query: string): Promise<Student[]> {
+export async function findStudentsByQuery(
+  query: string,
+  limit = 8
+): Promise<Student[]> {
   const q = normalizeText(query);
   if (!q) return [];
 
@@ -95,22 +98,28 @@ export async function findStudentsByQuery(query: string): Promise<Student[]> {
   const emailQ = normalizeEmail(q);
   const cccdQ = normalizeCccd(q);
   const nameQ = normalizeName(q);
+  const idQ = normalizeText(q).toLowerCase();
 
   const matches: Student[] = [];
   for (const doc of snap.docs) {
     const data = doc.data() as Student;
+    const ma = normalizeText(data.maSinhVien || doc.id).toLowerCase();
     const phone = normalizePhone(data.soDienThoai);
     const email = normalizeEmail(data.emailCaNhan);
     const cccd = normalizeCccd(data.canCuoc);
     const name = normalizeName(data.hoVaTen);
 
     const hit =
-      (phoneQ.length >= 8 && phone === phoneQ) ||
-      (emailQ.includes("@") && email === emailQ) ||
-      (cccdQ.length >= 8 && cccd === cccdQ) ||
-      (nameQ.length >= 3 && (name === nameQ || name.includes(nameQ)));
+      (nameQ.length >= 2 && name.includes(nameQ)) ||
+      (phoneQ.length >= 3 && phone.includes(phoneQ)) ||
+      (cccdQ.length >= 3 && cccd.includes(cccdQ)) ||
+      (emailQ.length >= 3 && email.includes(emailQ)) ||
+      (idQ.length >= 3 && ma.includes(idQ));
 
-    if (hit) matches.push({ ...data, maSinhVien: data.maSinhVien || doc.id });
+    if (hit) {
+      matches.push({ ...data, maSinhVien: data.maSinhVien || doc.id });
+      if (matches.length >= limit) break;
+    }
   }
 
   return matches;

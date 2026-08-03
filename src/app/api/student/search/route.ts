@@ -5,7 +5,7 @@ import { findStudentsByQuery, toIdentity } from "@/lib/students-repo";
 export async function POST(req: Request) {
   try {
     const ip = getClientIp(req.headers);
-    const limited = rateLimit(`search:${ip}`, 30, 60_000);
+    const limited = rateLimit(`search:${ip}`, 90, 60_000);
     if (!limited.ok) {
       return NextResponse.json(
         { error: "Quá nhiều yêu cầu. Thử lại sau." },
@@ -13,23 +13,15 @@ export async function POST(req: Request) {
       );
     }
 
-    const body = (await req.json()) as { query?: string };
+    const body = (await req.json()) as { query?: string; limit?: number };
     const query = (body.query || "").trim();
-    if (query.length < 3) {
-      return NextResponse.json(
-        { error: "Nhập ít nhất 3 ký tự để tìm." },
-        { status: 400 }
-      );
-    }
-
-    const matches = await findStudentsByQuery(query);
-    if (matches.length === 0) {
+    if (query.length < 2) {
       return NextResponse.json({ matches: [] });
     }
 
-    // Prefer exact-ish single match; if many names, return all identities for confirm UI (user said 4-field match uniqueness)
-    const identities = matches.map(toIdentity);
-    return NextResponse.json({ matches: identities });
+    const limit = Math.min(Math.max(Number(body.limit) || 8, 1), 15);
+    const matches = await findStudentsByQuery(query, limit);
+    return NextResponse.json({ matches: matches.map(toIdentity) });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Lỗi máy chủ";
     return NextResponse.json({ error: message }, { status: 500 });

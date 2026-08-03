@@ -4,7 +4,7 @@ import { MagnifyingGlass, Student, SealCheck, Sparkle } from "@phosphor-icons/re
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import type { StudentIdentity } from "@/lib/types";
 
 const easeOut = [0.22, 1, 0.36, 1] as const;
@@ -21,11 +21,15 @@ export default function HomePage() {
   const reduceMotion = useReducedMotion();
   const [introDone, setIntroDone] = useState(false);
   const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [suggestions, setSuggestions] = useState<StudentIdentity[]>([]);
+  const [openSuggest, setOpenSuggest] = useState(false);
+  const [suggestLoading, setSuggestLoading] = useState(false);
   const [error, setError] = useState("");
-  const [matches, setMatches] = useState<StudentIdentity[]>([]);
   const [selected, setSelected] = useState<StudentIdentity | null>(null);
   const [verifying, setVerifying] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reqIdRef = useRef(0);
 
   useEffect(() => {
     if (reduceMotion) {
@@ -36,37 +40,81 @@ export default function HomePage() {
     return () => window.clearTimeout(t);
   }, [reduceMotion]);
 
-  async function onSearch(e: FormEvent) {
-    e.preventDefault();
-    setError("");
-    setMatches([]);
-    setSelected(null);
-    setLoading(true);
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (!wrapRef.current?.contains(e.target as Node)) {
+        setOpenSuggest(false);
+      }
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
+  useEffect(() => {
+    const q = query.trim();
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+
+    if (q.length < 2) {
+      setSuggestions([]);
+      setSuggestLoading(false);
+      setOpenSuggest(false);
+      return;
+    }
+
+    setSuggestLoading(true);
+    debounceRef.current = setTimeout(() => {
+      void runSuggest(q);
+    }, 280);
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [query]);
+
+  async function runSuggest(q: string) {
+    const id = ++reqIdRef.current;
     try {
       const res = await fetch("/api/student/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query }),
+        body: JSON.stringify({ query: q, limit: 8 }),
       });
       const data = await res.json();
+      if (id !== reqIdRef.current) return;
       if (!res.ok) throw new Error(data.error || "Tìm kiếm thất bại");
-      if (!data.matches?.length) {
-        setError("Không tìm thấy hồ sơ phù hợp. Kiểm tra lại thông tin.");
-      } else {
-        setMatches(data.matches);
-        if (data.matches.length === 1) setSelected(data.matches[0]);
-        requestAnimationFrame(() => {
-          document.getElementById("ket-qua")?.scrollIntoView({
-            behavior: reduceMotion ? "auto" : "smooth",
-            block: "start",
-          });
-        });
-      }
+      setSuggestions(data.matches || []);
+      setOpenSuggest(true);
+      setError("");
     } catch (err) {
+      if (id !== reqIdRef.current) return;
+      setSuggestions([]);
       setError(err instanceof Error ? err.message : "Lỗi");
     } finally {
-      setLoading(false);
+      if (id === reqIdRef.current) setSuggestLoading(false);
     }
+  }
+
+  function pickStudent(item: StudentIdentity) {
+    setSelected(item);
+    setQuery(item.hoVaTen);
+    setOpenSuggest(false);
+    setSuggestions([]);
+    setError("");
+    requestAnimationFrame(() => {
+      document.getElementById("ket-qua")?.scrollIntoView({
+        behavior: reduceMotion ? "auto" : "smooth",
+        block: "start",
+      });
+    });
+  }
+
+  function onSearch(e: FormEvent) {
+    e.preventDefault();
+    const q = query.trim();
+    if (q.length < 2) return;
+    void runSuggest(q).then(() => {
+      setOpenSuggest(true);
+    });
   }
 
   async function onConfirm() {
@@ -157,7 +205,7 @@ export default function HomePage() {
       </AnimatePresence>
 
       {/* Hero */}
-      <section className="relative isolate overflow-hidden bg-gradient-to-b from-hero-from via-hero-to to-[#1a4a8a] text-white">
+      <section className="relative isolate overflow-x-hidden bg-gradient-to-b from-hero-from via-hero-to to-[#1a4a8a] text-white">
         <div className="pointer-events-none absolute inset-0" aria-hidden>
           <div
             className="absolute inset-0 opacity-35"
@@ -216,48 +264,98 @@ export default function HomePage() {
 
             <motion.form
               onSubmit={onSearch}
-              className="mt-5 w-full max-w-md rounded-2xl bg-white p-3 shadow-xl shadow-black/25 sm:p-4"
+              className="relative z-30 mt-5 w-full max-w-md rounded-2xl bg-white p-3 shadow-xl shadow-black/25 sm:p-4"
               initial={reduceMotion ? false : { opacity: 0, y: 24, scale: 0.96 }}
               animate={introDone ? { opacity: 1, y: 0, scale: 1 } : undefined}
               transition={{ duration: 0.5, ease: easeOut, delay: 0.32 }}
-              whileHover={reduceMotion ? undefined : { y: -2 }}
             >
               <label htmlFor="query" className="sr-only">
                 Tìm kiếm hồ sơ
               </label>
-              <div className="flex flex-col gap-2">
-                <input
-                  id="query"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Họ tên / email / SĐT / CCCD"
-                  className="min-h-12 w-full rounded-xl border border-border bg-background px-4 text-base text-foreground placeholder:text-foreground/40"
-                  autoComplete="off"
-                  inputMode="search"
-                  required
-                  minLength={3}
-                />
+              <div ref={wrapRef} className="relative flex flex-col gap-2">
+                <div className="relative">
+                  <input
+                    id="query"
+                    value={query}
+                    onChange={(e) => {
+                      setQuery(e.target.value);
+                      setSelected(null);
+                    }}
+                    onFocus={() => {
+                      if (suggestions.length) setOpenSuggest(true);
+                    }}
+                    placeholder="Họ tên / email / SĐT / CCCD"
+                    className="min-h-12 w-full rounded-xl border border-border bg-background px-4 pr-11 text-base text-foreground placeholder:text-foreground/40"
+                    autoComplete="off"
+                    inputMode="search"
+                    role="combobox"
+                    aria-expanded={openSuggest}
+                    aria-controls="search-suggest"
+                    aria-autocomplete="list"
+                  />
+                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-foreground/40">
+                    {suggestLoading ? (
+                      <motion.span
+                        className="inline-block h-4 w-4 rounded-full border-2 border-primary/20 border-t-primary"
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 0.7, repeat: Infinity, ease: "linear" }}
+                      />
+                    ) : (
+                      <MagnifyingGlass size={18} weight="bold" aria-hidden />
+                    )}
+                  </span>
+
+                  <AnimatePresence>
+                    {openSuggest && query.trim().length >= 2 ? (
+                      <motion.ul
+                        id="search-suggest"
+                        role="listbox"
+                        className="absolute left-0 right-0 top-[calc(100%+6px)] z-40 max-h-72 overflow-auto rounded-xl border border-border bg-white py-1 shadow-2xl shadow-black/20"
+                        initial={{ opacity: 0, y: -6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -4 }}
+                        transition={{ duration: 0.18 }}
+                      >
+                        {suggestions.length === 0 && !suggestLoading ? (
+                          <li className="px-3 py-3 text-sm text-foreground/55">
+                            Không tìm thấy hồ sơ phù hợp
+                          </li>
+                        ) : (
+                          suggestions.map((m) => (
+                            <li key={m.maSinhVien} role="option">
+                              <button
+                                type="button"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => pickStudent(m)}
+                                className="flex w-full flex-col gap-0.5 px-3 py-2.5 text-left transition hover:bg-muted/80 active:bg-accent-soft"
+                              >
+                                <span className="flex items-center gap-2 font-semibold text-foreground">
+                                  <Student size={16} className="shrink-0 text-primary" aria-hidden />
+                                  {m.hoVaTen || "—"}
+                                </span>
+                                <span className="grid gap-0.5 pl-6 font-mono text-[11px] leading-snug text-foreground/60 sm:text-xs">
+                                  <span>Mã SV: {m.maSinhVien || "—"}</span>
+                                  <span>SĐT: {m.soDienThoai || "—"}</span>
+                                  <span>CCCD: {m.canCuoc || "—"}</span>
+                                </span>
+                              </button>
+                            </li>
+                          ))
+                        )}
+                      </motion.ul>
+                    ) : null}
+                  </AnimatePresence>
+                </div>
+
                 <motion.button
                   type="submit"
-                  disabled={loading}
-                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-accent px-5 text-base font-bold text-white disabled:opacity-50"
+                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-accent px-5 text-base font-bold text-white"
                   whileTap={reduceMotion ? undefined : { scale: 0.97 }}
                   whileHover={reduceMotion ? undefined : { scale: 1.02, filter: "brightness(1.08)" }}
                   transition={{ type: "spring", stiffness: 400, damping: 22 }}
                 >
                   <MagnifyingGlass size={20} weight="bold" aria-hidden />
-                  {loading ? (
-                    <span className="inline-flex items-center gap-2">
-                      <motion.span
-                        className="inline-block h-4 w-4 rounded-full border-2 border-white/30 border-t-white"
-                        animate={{ rotate: 360 }}
-                        transition={{ duration: 0.7, repeat: Infinity, ease: "linear" }}
-                      />
-                      Đang tìm…
-                    </span>
-                  ) : (
-                    "Tìm hồ sơ của tôi"
-                  )}
+                  Tìm hồ sơ của tôi
                 </motion.button>
               </div>
             </motion.form>
@@ -322,7 +420,7 @@ export default function HomePage() {
         </AnimatePresence>
 
         <AnimatePresence>
-          {matches.length > 0 ? (
+          {selected ? (
             <motion.section
               id="ket-qua"
               className="mt-4 space-y-4 scroll-mt-4"
@@ -332,117 +430,73 @@ export default function HomePage() {
               exit={{ opacity: 0, y: 12 }}
               transition={{ duration: 0.4, ease: easeOut }}
             >
-              <motion.div
-                className="flex items-center gap-2"
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.05 }}
-              >
-                <motion.span
-                  animate={reduceMotion ? undefined : { rotate: [0, -12, 12, 0] }}
-                  transition={{ duration: 0.6, delay: 0.1 }}
-                >
-                  <SealCheck size={22} weight="fill" className="text-accent" aria-hidden />
-                </motion.span>
+              <div className="flex items-center gap-2">
+                <SealCheck size={22} weight="fill" className="text-accent" aria-hidden />
                 <h2 className="font-display text-xl font-extrabold text-foreground">
                   Xác minh thông tin
                 </h2>
-              </motion.div>
+              </div>
 
-              {matches.length > 1 ? (
-                <div className="space-y-2">
-                  <p className="text-sm text-foreground/70">
-                    Có nhiều kết quả — chọn đúng hồ sơ của bạn:
+              <motion.div
+                className="overflow-hidden rounded-2xl border border-border bg-surface shadow-lg shadow-primary/5"
+                initial={{ opacity: 0, scale: 0.96, y: 16 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                transition={{ type: "spring", stiffness: 200, damping: 20 }}
+              >
+                <div className="border-b border-border bg-primary px-4 py-3 text-on-primary">
+                  <p className="text-xs font-medium uppercase tracking-wide text-white/70">
+                    Hồ sơ đã chọn
                   </p>
-                  {matches.map((m, i) => (
-                    <motion.button
-                      key={m.maSinhVien}
-                      type="button"
-                      onClick={() => setSelected(m)}
-                      className={`flex w-full min-h-14 items-start gap-3 rounded-2xl border px-4 py-3 text-left ${
-                        selected?.maSinhVien === m.maSinhVien
-                          ? "border-accent bg-accent-soft shadow-sm"
-                          : "border-border bg-surface"
-                      }`}
-                      initial={{ opacity: 0, y: 12, scale: 0.98 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      transition={{ delay: 0.08 + i * 0.05, duration: 0.3, ease: easeOut }}
-                      whileTap={reduceMotion ? undefined : { scale: 0.98 }}
-                    >
-                      <Student size={22} className="mt-0.5 shrink-0 text-primary" aria-hidden />
-                      <span>
-                        <span className="block font-semibold">{m.hoVaTen}</span>
-                        <span className="font-mono text-xs text-foreground/55">
-                          {m.maSinhVien}
-                        </span>
-                      </span>
-                    </motion.button>
-                  ))}
+                  <p className="font-display text-lg font-extrabold leading-tight">
+                    {selected.hoVaTen}
+                  </p>
+                  <p className="mt-0.5 font-mono text-xs text-white/75">
+                    Mã SV: {selected.maSinhVien}
+                  </p>
                 </div>
-              ) : null}
 
-              {selected ? (
-                <motion.div
-                  className="overflow-hidden rounded-2xl border border-border bg-surface shadow-lg shadow-primary/5"
-                  initial={{ opacity: 0, scale: 0.96, y: 16 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  transition={{ type: "spring", stiffness: 200, damping: 20 }}
-                >
-                  <div className="border-b border-border bg-primary px-4 py-3 text-on-primary">
-                    <p className="text-xs font-medium uppercase tracking-wide text-white/70">
-                      Hồ sơ khớp
-                    </p>
-                    <p className="font-display text-lg font-extrabold leading-tight">
-                      {selected.hoVaTen}
-                    </p>
-                    <p className="mt-0.5 font-mono text-xs text-white/75">
-                      Mã SV: {selected.maSinhVien}
-                    </p>
-                  </div>
-
-                  <table className="w-full text-left text-sm">
-                    <tbody>
-                      {[
-                        ["Họ và tên", selected.hoVaTen],
-                        ["Email cá nhân", selected.emailCaNhan],
-                        ["Số điện thoại", selected.soDienThoai],
-                        ["Căn cước", selected.canCuoc],
-                      ].map(([label, value], i, arr) => (
-                        <motion.tr
-                          key={label}
-                          className={i === arr.length - 1 ? "" : "border-b border-border/80"}
-                          initial={{ opacity: 0, x: -8 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: 0.12 + i * 0.06, duration: 0.28 }}
+                <table className="w-full text-left text-sm">
+                  <tbody>
+                    {[
+                      ["Họ và tên", selected.hoVaTen],
+                      ["Email cá nhân", selected.emailCaNhan],
+                      ["Số điện thoại", selected.soDienThoai],
+                      ["Căn cước", selected.canCuoc],
+                    ].map(([label, value], i, arr) => (
+                      <motion.tr
+                        key={label}
+                        className={i === arr.length - 1 ? "" : "border-b border-border/80"}
+                        initial={{ opacity: 0, x: -8 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.12 + i * 0.06, duration: 0.28 }}
+                      >
+                        <th
+                          scope="row"
+                          className="w-[38%] bg-muted/50 px-3 py-3 align-top text-xs font-semibold uppercase tracking-wide text-foreground/55 sm:w-40 sm:px-4"
                         >
-                          <th
-                            scope="row"
-                            className="w-[38%] bg-muted/50 px-3 py-3 align-top text-xs font-semibold uppercase tracking-wide text-foreground/55 sm:w-40 sm:px-4"
-                          >
-                            {label}
-                          </th>
-                          <td className="px-3 py-3 text-[15px] font-semibold leading-snug break-all text-foreground sm:px-4 sm:text-base">
-                            {value || "—"}
-                          </td>
-                        </motion.tr>
-                      ))}
-                    </tbody>
-                  </table>
+                          {label}
+                        </th>
+                        <td className="px-3 py-3 text-[15px] font-semibold leading-snug break-all text-foreground sm:px-4 sm:text-base">
+                          {value || "—"}
+                        </td>
+                      </motion.tr>
+                    ))}
+                  </tbody>
+                </table>
 
-                  <div className="border-t border-border p-4">
-                    <motion.button
-                      type="button"
-                      onClick={onConfirm}
-                      disabled={verifying}
-                      className="inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-primary px-5 text-base font-bold text-on-primary disabled:opacity-50"
-                      whileTap={reduceMotion ? undefined : { scale: 0.97 }}
-                      whileHover={reduceMotion ? undefined : { scale: 1.015 }}
-                    >
-                      {verifying ? "Đang xác nhận…" : "Đúng là tôi — xem hồ sơ"}
-                    </motion.button>
-                  </div>
-                </motion.div>
-              ) : null}
+                <div className="border-t border-border p-4">
+                  <motion.button
+                    type="button"
+                    onClick={onConfirm}
+                    disabled={verifying}
+                    className="inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-primary px-5 text-base font-bold text-on-primary disabled:opacity-50"
+                    whileTap={reduceMotion ? undefined : { scale: 0.97 }}
+                    whileHover={reduceMotion ? undefined : { scale: 1.015 }}
+                  >
+                    {verifying ? "Đang xác nhận…" : "Đúng là tôi — xem hồ sơ"}
+                  </motion.button>
+                </div>
+              </motion.div>
             </motion.section>
           ) : null}
         </AnimatePresence>
