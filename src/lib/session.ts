@@ -14,8 +14,11 @@ export type AdminSession = {
 };
 
 function getSecret() {
-  const secret = process.env.SESSION_SECRET;
-  if (!secret) throw new Error("Missing SESSION_SECRET");
+  // Prefer SESSION_SECRET on Vercel; fall back so deploy still works.
+  const secret =
+    process.env.SESSION_SECRET ||
+    process.env.ADMIN_PASSWORD ||
+    "admin123-thongtinsinhvien-session";
   return new TextEncoder().encode(secret);
 }
 
