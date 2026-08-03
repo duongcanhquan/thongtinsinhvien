@@ -9,6 +9,13 @@ import type { StudentIdentity } from "@/lib/types";
 
 const easeOut = [0.22, 1, 0.36, 1] as const;
 
+const LYON_LINES = [
+  "Chào bạn",
+  "Hãy cùng một hành trình mới",
+  "Tôi là Lyon",
+  "Chào mừng bạn gia nhập Việt Mỹ",
+];
+
 export default function HomePage() {
   const router = useRouter();
   const reduceMotion = useReducedMotion();
@@ -121,7 +128,7 @@ export default function HomePage() {
                 width={260}
                 height={150}
                 priority
-                className="h-auto w-[min(70vw,260px)] drop-shadow-2xl"
+                className="h-auto w-[min(55vw,200px)] drop-shadow-2xl"
               />
             </motion.div>
             <motion.p
@@ -194,7 +201,7 @@ export default function HomePage() {
                 width={280}
                 height={160}
                 priority
-                className="h-auto w-[min(72vw,280px)] object-contain drop-shadow-lg lg:w-[300px]"
+                className="h-auto w-[min(48vw,168px)] object-contain drop-shadow-lg sm:w-[min(56vw,220px)] lg:w-[280px]"
               />
             </motion.div>
 
@@ -207,21 +214,12 @@ export default function HomePage() {
               Tra cứu dữ liệu
             </motion.h1>
 
-            <motion.p
-              className="mt-3 max-w-md text-sm leading-relaxed text-white/80 sm:text-base"
-              initial={reduceMotion ? false : { opacity: 0, y: 14 }}
-              animate={introDone ? { opacity: 1, y: 0 } : undefined}
-              transition={{ duration: 0.45, ease: easeOut, delay: 0.32 }}
-            >
-              Nhập họ tên, email, SĐT hoặc CCCD để xem và rà soát hồ sơ của bạn.
-            </motion.p>
-
             <motion.form
               onSubmit={onSearch}
-              className="mt-6 w-full max-w-md rounded-2xl bg-white p-3 shadow-xl shadow-black/25 sm:p-4"
+              className="mt-5 w-full max-w-md rounded-2xl bg-white p-3 shadow-xl shadow-black/25 sm:p-4"
               initial={reduceMotion ? false : { opacity: 0, y: 24, scale: 0.96 }}
               animate={introDone ? { opacity: 1, y: 0, scale: 1 } : undefined}
-              transition={{ duration: 0.5, ease: easeOut, delay: 0.4 }}
+              transition={{ duration: 0.5, ease: easeOut, delay: 0.32 }}
               whileHover={reduceMotion ? undefined : { y: -2 }}
             >
               <label htmlFor="query" className="sr-only">
@@ -298,16 +296,7 @@ export default function HomePage() {
                 priority
                 className="relative h-auto w-full rounded-[2rem] object-cover object-top shadow-2xl shadow-black/40 ring-4 ring-white/25"
               />
-              <motion.div
-                className="absolute -left-2 top-6 rounded-full bg-white px-3 py-1.5 text-xs font-bold text-primary shadow-lg"
-                initial={reduceMotion ? false : { scale: 0, opacity: 0 }}
-                animate={introDone ? { scale: 1, opacity: 1 } : undefined}
-                transition={{ type: "spring", stiffness: 260, damping: 14, delay: 0.7 }}
-              >
-                <span className="inline-flex items-center gap-1">
-                  <Sparkle weight="fill" className="text-accent" /> Xin chào!
-                </span>
-              </motion.div>
+              <LyonSpeech reduceMotion={!!reduceMotion} ready={introDone} />
             </motion.div>
           </motion.div>
         </div>
@@ -463,6 +452,48 @@ export default function HomePage() {
         </footer>
       </div>
     </main>
+  );
+}
+
+function LyonSpeech({
+  reduceMotion,
+  ready,
+}: {
+  reduceMotion: boolean;
+  ready: boolean;
+}) {
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    if (!ready || reduceMotion) return;
+    const id = window.setInterval(() => {
+      setIndex((i) => (i + 1) % LYON_LINES.length);
+    }, 2800);
+    return () => window.clearInterval(id);
+  }, [ready, reduceMotion]);
+
+  const text = reduceMotion ? LYON_LINES[0] : LYON_LINES[index];
+
+  return (
+    <div className="pointer-events-none absolute -left-1 right-2 top-4 sm:-left-3 sm:right-auto sm:top-6 sm:max-w-[220px]">
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={text}
+          className="relative inline-flex max-w-[min(78vw,220px)] items-start gap-1.5 rounded-2xl rounded-bl-md bg-white px-3 py-2 text-left text-xs font-bold leading-snug text-primary shadow-lg sm:text-sm"
+          initial={reduceMotion ? false : { opacity: 0, y: 10, scale: 0.92 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={reduceMotion ? undefined : { opacity: 0, y: -8, scale: 0.95 }}
+          transition={{ duration: 0.35, ease: easeOut }}
+        >
+          <Sparkle weight="fill" className="mt-0.5 shrink-0 text-accent" aria-hidden />
+          <span>{text}</span>
+          <span
+            className="absolute -bottom-1.5 left-4 h-3 w-3 rotate-45 bg-white shadow-sm"
+            aria-hidden
+          />
+        </motion.div>
+      </AnimatePresence>
+    </div>
   );
 }
 
