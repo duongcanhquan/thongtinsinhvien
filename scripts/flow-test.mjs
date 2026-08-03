@@ -194,6 +194,53 @@ async function main() {
     else fail("Admin queue has request", json?.error || "not found");
   }
 
+  // REJECT — giữ thông tin cũ (admin là cổng cuối)
+  {
+    const { res, json } = await req(
+      adminJar,
+      `/api/admin/requests/${encodeURIComponent(ma)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reject", adminNote: "QC reject nonsense" }),
+      }
+    );
+    if (res.ok) pass("Admin reject request");
+    else fail("Admin reject request", json?.error || res.status);
+  }
+  {
+    const { res, json } = await req(adminJar, `/api/admin/students/${encodeURIComponent(ma)}`);
+    if (res.ok && String(json.student.soDienThoai) === originalPhone) {
+      pass("Reject keeps official data", originalPhone || "(empty)");
+    } else {
+      fail(
+        "Reject keeps official data",
+        `got ${json?.student?.soDienThoai}, expected ${originalPhone}`
+      );
+    }
+  }
+  {
+    const { res, json } = await req(studentJar, "/api/student/me");
+    if (res.ok && !json.pending) pass("Pending cleared after reject");
+    else fail("Pending cleared after reject", JSON.stringify(json?.pending));
+  }
+
+  // Re-submit edit for approve path
+  {
+    const fields = { ...pickEditable(meBefore), soDienThoai: testPhone };
+    const { res, json } = await req(studentJar, "/api/student/change-request", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        intent: "edit",
+        proposedFields: fields,
+        proposedDocuments: {},
+      }),
+    });
+    if (res.ok && json.hasChanges) pass("Resubmit after reject");
+    else fail("Resubmit after reject", JSON.stringify(json));
+  }
+
   // Upload URL + tiny PNG
   let uploadedKey = null;
   {

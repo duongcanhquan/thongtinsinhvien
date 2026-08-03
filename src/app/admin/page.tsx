@@ -252,7 +252,22 @@ export default function AdminPage() {
     try {
       const body: Record<string, unknown> = { action, adminNote: note };
       if (action === "edit_approve") {
-        body.proposedFields = editDraft;
+        // Chỉ gửi các trường admin đang xem/sửa (diff + giá trị draft)
+        const fields: Record<string, string> = {};
+        for (const key of changedKeys) {
+          fields[key] = editDraft[key] ?? "";
+        }
+        // Cho phép admin chỉnh thêm bất kỳ key nào trong draft nếu khác bản chính thức
+        if (requestStudent) {
+          for (const key of STUDENT_EDITABLE_FIELDS) {
+            const draft = editDraft[key] ?? "";
+            const official = String(
+              (requestStudent as Record<string, unknown>)[key] ?? ""
+            );
+            if (draft !== official) fields[key] = draft;
+          }
+        }
+        body.proposedFields = fields;
         body.proposedDocuments = selected.proposedDocuments || {};
       }
       const res = await fetch(`/api/admin/requests/${selected.maSinhVien}`, {

@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { buildObjectKey, createUploadUrl, guessContentType } from "@/lib/r2";
+import { getClientIp, rateLimit } from "@/lib/rate-limit";
 import { getStudentSession, getAdminSession } from "@/lib/session";
 import { DOCUMENT_KEYS } from "@/lib/student-fields";
+import { getStudent } from "@/lib/students-repo";
 
 export async function POST(req: Request) {
   try {
@@ -9,6 +11,16 @@ export async function POST(req: Request) {
     const admin = await getAdminSession();
     if (!student && !admin) {
       return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+    }
+
+    const ip = getClientIp(req.headers);
+    const who = admin ? `admin:${ip}` : `sv:${student!.maSinhVien}:${ip}`;
+    const limited = rateLimit(`upload:${who}`, 40, 60_000);
+    if (!limited.ok) {
+      return NextResponse.json(
+        { error: "Quá nhiều yêu cầu upload. Thử lại sau." },
+        { status: 429 }
+      );
     }
 
     const body = (await req.json()) as {
@@ -31,6 +43,17 @@ export async function POST(req: Request) {
 
     if (student && student.maSinhVien !== maSinhVien) {
       return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+    }
+
+    // Sinh viên không upload vào mục đã Đủ — chỉ admin
+    if (student && !admin) {
+      const profile = await getStudent(student.maSinhVien);
+      if (profile?.documents?.[body.fieldKey]?.status === "du") {
+        return NextResponse.json(
+          { error: "Mục này đã đủ — không cần bổ sung. Liên hệ quản lý nếu cần thay đổi." },
+          { status: 403 }
+        );
+      }
     }
 
     const key = buildObjectKey(maSinhVien, body.fieldKey, body.filename);
