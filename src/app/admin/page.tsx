@@ -29,10 +29,18 @@ export default function AdminPage() {
   const [busy, setBusy] = useState(false);
   const [importResult, setImportResult] = useState("");
   const [error, setError] = useState("");
+  const [studentTotal, setStudentTotal] = useState(0);
 
   useEffect(() => {
     void bootstrap();
   }, []);
+
+  useEffect(() => {
+    if (authed && tab === "students" && students.length === 0 && !q) {
+      void searchStudents();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once when opening tab
+  }, [authed, tab]);
 
   async function bootstrap() {
     const res = await fetch("/api/admin/requests");
@@ -79,13 +87,43 @@ export default function AdminPage() {
 
   async function searchStudents(e?: FormEvent) {
     e?.preventDefault();
-    const res = await fetch(`/api/admin/students?q=${encodeURIComponent(q)}`);
-    const data = await res.json();
-    if (!res.ok) {
-      setError(data.error || "Lỗi tìm kiếm");
-      return;
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/admin/students?q=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Lỗi tìm kiếm");
+        return;
+      }
+      setStudents(data.students || []);
+      setStudentTotal(data.total ?? (data.students || []).length);
+    } finally {
+      setBusy(false);
     }
-    setStudents(data.students || []);
+  }
+
+  async function exportAll() {
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/admin/export");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Xuất dữ liệu thất bại");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `students-export-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Lỗi");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function decide(action: "approve" | "reject") {
@@ -143,7 +181,7 @@ export default function AdminPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Import thất bại");
       setImportResult(
-        `Thêm mới: ${data.added}. Bỏ qua (đã có): ${data.skipped}. Lỗi: ${(data.errors || []).length}`
+        `Thêm mới: ${data.added}. Cập nhật (dữ liệu mới nhất): ${data.updated ?? 0}. Lỗi: ${(data.errors || []).length}`
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Lỗi");
@@ -350,16 +388,35 @@ export default function AdminPage() {
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Tìm theo tên / email / SĐT / CCCD / mã SV"
+              placeholder="Tìm theo tên / email / SĐT / CCCD / mã SV (để trống = tất cả)"
               className="min-h-12 flex-1 rounded-xl border border-border px-4"
             />
             <button
               type="submit"
-              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-primary px-5 font-semibold text-on-primary"
+              disabled={busy}
+              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-primary px-5 font-semibold text-on-primary disabled:opacity-50"
             >
-              <MagnifyingGlass /> Tìm
+              <MagnifyingGlass /> {busy ? "Đang tải…" : "Tải / Tìm"}
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void exportAll()}
+              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-border bg-surface px-5 text-sm font-semibold disabled:opacity-50"
+            >
+              <DownloadSimple /> Xuất JSON
             </button>
           </form>
+          <p className="text-sm text-foreground/60">
+            Đang hiển thị <span className="font-semibold text-foreground">{students.length}</span>
+            {studentTotal ? (
+              <>
+                {" "}
+                / tổng <span className="font-semibold text-foreground">{studentTotal}</span>
+              </>
+            ) : null}{" "}
+            hồ sơ
+          </p>
           <div className="overflow-x-auto rounded-2xl border border-border bg-surface">
             <table className="min-w-full text-left text-sm">
               <thead className="bg-muted/60 text-foreground/70">
@@ -449,7 +506,9 @@ export default function AdminPage() {
             <FileXls /> Import Excel
           </h2>
           <p className="mt-2 text-sm text-foreground/70">
-            Đọc dữ liệu từ dòng 3. Trùng mã sinh viên sẽ được bỏ qua.
+            Đọc dữ liệu từ dòng 3. Mã SV mới sẽ được thêm; mã đã có sẽ được{" "}
+            <strong>cập nhật theo dữ liệu mới nhất</strong> (giữ nguyên file đã
+            upload).
           </p>
           <label className="mt-4 inline-flex min-h-12 cursor-pointer items-center rounded-xl border border-dashed border-border px-4 text-sm font-medium">
             Chọn file .xlsx

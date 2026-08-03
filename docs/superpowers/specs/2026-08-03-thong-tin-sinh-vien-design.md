@@ -34,7 +34,7 @@ Next.js App Router trên Vercel. Mọi đọc/ghi PII qua Route Handlers + Fireb
 - Login `/admin`
 - Hàng đợi change requests: duyệt / từ chối / sửa rồi duyệt; tải file SV
 - Search + sửa trực tiếp hồ sơ; tải file
-- Import Excel: data từ **dòng 3** (2 dòng đầu là thông tin); trùng mã SV → **bỏ qua**
+- Import Excel: data từ **dòng 3** (2 dòng đầu là thông tin); trùng mã SV → **cập nhật** trường từ Excel (giữ file đã upload)
 
 ## Excel columns (row 3+)
 

@@ -33,7 +33,7 @@ npm run build
 ## Luồng chính
 
 - SV: `/` tìm 1 trường → hiện 4 định danh → xác nhận → `/ho-so`
-- Admin: `/admin` → yêu cầu sửa / search-sửa / import Excel (dòng 3+)
+- Admin: `/admin` → yêu cầu sửa / search-sửa / import Excel (dòng 3+, cập nhật mã đã có) / xuất JSON toàn bộ
 
 ## Design
 

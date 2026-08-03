@@ -125,6 +125,35 @@ export async function findStudentsByQuery(
   return matches;
 }
 
+/** Merge Excel document slots into existing ones — keep uploaded files. */
+export function mergeDocumentSlots(
+  existing: Record<string, DocumentSlot> | undefined,
+  incoming: Record<string, DocumentSlot> | undefined
+): Record<string, DocumentSlot> {
+  const base = emptyDocuments();
+  const prev = existing || {};
+  const next = incoming || {};
+
+  for (const key of DOCUMENT_KEYS) {
+    const oldSlot = prev[key];
+    const newSlot = next[key];
+    if (!oldSlot && !newSlot) {
+      base[key] = { status: "thieu", files: [] };
+      continue;
+    }
+    const files = oldSlot?.files?.length
+      ? oldSlot.files
+      : newSlot?.files || [];
+    const status = newSlot?.status || oldSlot?.status || "thieu";
+    const note = newSlot?.note ?? oldSlot?.note;
+    const slot: DocumentSlot = { status, files };
+    if (note) slot.note = note;
+    base[key] = slot;
+  }
+
+  return base;
+}
+
 export async function getStudent(maSinhVien: string): Promise<Student | null> {
   const db = getDb();
   const doc = await db.collection("students").doc(maSinhVien).get();
@@ -185,13 +214,15 @@ export async function listPendingRequests(): Promise<ChangeRequest[]> {
   return snap.docs.map((d) => d.data() as ChangeRequest);
 }
 
-export async function listStudents(limit = 200): Promise<Student[]> {
+/** Load every student document (admin / export). No artificial cap. */
+export async function listStudents(): Promise<Student[]> {
   const db = getDb();
-  const snap = await db.collection("students").limit(limit).get();
+  const snap = await db.collection("students").get();
   return snap.docs.map((d) => ({ ...(d.data() as Student), maSinhVien: d.id }));
 }
 
 export async function searchStudentsAdmin(query: string): Promise<Student[]> {
   if (!query.trim()) return listStudents();
-  return findStudentsByQuery(query);
+  // Admin needs full match set, not the public suggest limit of 8
+  return findStudentsByQuery(query, Number.POSITIVE_INFINITY);
 }
