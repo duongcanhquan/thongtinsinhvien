@@ -18,8 +18,17 @@ import {
   DOCUMENT_LABELS,
   FIELD_LABELS,
   STUDENT_EDITABLE_FIELDS,
+  birthDateFromParts,
+  isValidBirthDate,
+  normalizeBirthDate,
 } from "@/lib/student-fields";
 import type { ChangeRequest, DocumentSlot, Student, UploadedFile } from "@/lib/types";
+import {
+  BirthDateFields,
+  PhoneField,
+  isPhoneKey,
+  validateProfileFields,
+} from "@/components/form-fields";
 
 type Tab = "requests" | "students" | "import";
 type EditMode = "create" | "edit";
@@ -34,9 +43,6 @@ const FIELD_GROUPS: { title: string; keys: readonly string[] }[] = [
       "ten",
       "gioiTinh",
       "ngaySinh",
-      "ngay",
-      "thang",
-      "nam",
       "noiSinh",
       "danToc",
       "canCuoc",
@@ -304,10 +310,33 @@ export default function AdminPage() {
     setError("");
     setMessage("");
     try {
+      let nextStudent = { ...editStudent };
+      const normalized = normalizeBirthDate(String(nextStudent.ngaySinh || ""));
+      if (isValidBirthDate(normalized)) {
+        const [dd, mm, yyyy] = normalized.split("/");
+        nextStudent = {
+          ...nextStudent,
+          ngaySinh: normalized,
+          ngay: String(Number(dd)),
+          thang: String(Number(mm)),
+          nam: yyyy,
+        };
+      } else if (nextStudent.ngay || nextStudent.thang || nextStudent.nam) {
+        const composed = birthDateFromParts(
+          nextStudent.ngay,
+          nextStudent.thang,
+          nextStudent.nam
+        );
+        if (composed) nextStudent = { ...nextStudent, ngaySinh: composed };
+      }
+
       const fields: Record<string, string> = {};
       for (const key of ADMIN_EDITABLE_FIELDS) {
-        fields[key] = String((editStudent as Record<string, unknown>)[key] ?? "");
+        fields[key] = String((nextStudent as Record<string, unknown>)[key] ?? "");
       }
+      const invalid = validateProfileFields(fields);
+      if (invalid) throw new Error(invalid);
+      setEditStudent(nextStudent);
 
       if (editMode === "create") {
         const res = await fetch("/api/admin/students", {
@@ -316,7 +345,7 @@ export default function AdminPage() {
           body: JSON.stringify({
             maSinhVien: ma,
             fields,
-            documents: editStudent.documents,
+            documents: nextStudent.documents,
           }),
         });
         const data = await res.json();
@@ -332,7 +361,7 @@ export default function AdminPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             fields,
-            documents: editStudent.documents,
+            documents: nextStudent.documents,
           }),
         });
         const data = await res.json();
@@ -1097,24 +1126,65 @@ export default function AdminPage() {
                 <section key={group.title}>
                   <h3 className="mb-2 font-semibold text-primary">{group.title}</h3>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    {group.keys.map((key) => (
-                      <label key={key} className="text-sm">
-                        {FIELD_LABELS[key] || key}
-                        {key === "hoVaTen" ? " *" : ""}
-                        <input
-                          className="mt-1 min-h-11 w-full rounded-lg border border-border px-3"
-                          value={String(
-                            (editStudent as Record<string, unknown>)[key] ?? ""
-                          )}
-                          onChange={(e) =>
-                            setEditStudent({
-                              ...editStudent,
-                              [key]: e.target.value,
-                            })
-                          }
-                        />
-                      </label>
-                    ))}
+                    {group.keys.map((key) => {
+                      if (key === "ngaySinh") {
+                        return (
+                          <BirthDateFields
+                            key={key}
+                            ngaySinh={String(editStudent.ngaySinh || "")}
+                            ngay={String(editStudent.ngay || "")}
+                            thang={String(editStudent.thang || "")}
+                            nam={String(editStudent.nam || "")}
+                            inputClassName="min-h-11 w-full rounded-lg border border-border bg-white px-3 text-sm"
+                            onChange={(next) =>
+                              setEditStudent({
+                                ...editStudent,
+                                ...next,
+                              })
+                            }
+                          />
+                        );
+                      }
+                      if (isPhoneKey(key)) {
+                        return (
+                          <PhoneField
+                            key={key}
+                            label={
+                              (FIELD_LABELS[key] || key) +
+                              (key === "hoVaTen" ? " *" : "")
+                            }
+                            value={String(
+                              (editStudent as Record<string, unknown>)[key] ?? ""
+                            )}
+                            inputClassName="min-h-11 w-full rounded-lg border border-border bg-white px-3 text-sm"
+                            onChange={(v) =>
+                              setEditStudent({
+                                ...editStudent,
+                                [key]: v,
+                              })
+                            }
+                          />
+                        );
+                      }
+                      return (
+                        <label key={key} className="text-sm">
+                          {FIELD_LABELS[key] || key}
+                          {key === "hoVaTen" ? " *" : ""}
+                          <input
+                            className="mt-1 min-h-11 w-full rounded-lg border border-border px-3"
+                            value={String(
+                              (editStudent as Record<string, unknown>)[key] ?? ""
+                            )}
+                            onChange={(e) =>
+                              setEditStudent({
+                                ...editStudent,
+                                [key]: e.target.value,
+                              })
+                            }
+                          />
+                        </label>
+                      );
+                    })}
                   </div>
                 </section>
               ))}

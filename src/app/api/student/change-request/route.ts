@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
 import { getClientIp, rateLimit } from "@/lib/rate-limit";
 import { getStudentSession } from "@/lib/session";
-import { DOCUMENT_KEYS, STUDENT_EDITABLE_FIELDS } from "@/lib/student-fields";
+import {
+  DOCUMENT_KEYS,
+  STUDENT_EDITABLE_FIELDS,
+  birthDateError,
+  digitsPhone10,
+  normalizeBirthDate,
+  phoneError,
+} from "@/lib/student-fields";
 import { getChangeRequest, getStudent, saveChangeRequest } from "@/lib/students-repo";
 import type { ChangeRequest, DocumentSlot } from "@/lib/types";
 
@@ -37,11 +44,37 @@ export async function POST(req: Request) {
     const proposedFields: ChangeRequest["proposedFields"] = {};
     for (const key of STUDENT_EDITABLE_FIELDS) {
       if (body.proposedFields && key in body.proposedFields) {
-        const value = body.proposedFields[key];
+        let value = body.proposedFields[key];
+        if (key === "ngaySinh") {
+          const normalized = normalizeBirthDate(value);
+          value = normalized;
+        }
+        if (
+          key === "soDienThoai" ||
+          key === "sdtCha" ||
+          key === "sdtMe" ||
+          key === "sdtNguoiGiamHo"
+        ) {
+          value = digitsPhone10(value);
+        }
         const next = truncate(value == null ? "" : String(value));
         const prev = String((student as Record<string, unknown>)[key] ?? "");
         if (next === prev) continue;
         (proposedFields as Record<string, unknown>)[key] = next;
+      }
+    }
+
+    // Validate proposed values (admin vẫn là cổng cuối, nhưng chặn sai format rõ ràng)
+    if ("ngaySinh" in proposedFields) {
+      const e = birthDateError(proposedFields.ngaySinh);
+      if (e) return NextResponse.json({ error: e }, { status: 400 });
+    }
+    for (const key of ["soDienThoai", "sdtCha", "sdtMe", "sdtNguoiGiamHo"] as const) {
+      if (key in proposedFields) {
+        const e = phoneError(proposedFields[key], false);
+        if (e) {
+          return NextResponse.json({ error: e }, { status: 400 });
+        }
       }
     }
 

@@ -14,8 +14,17 @@ import {
   DOCUMENT_LABELS,
   FIELD_LABELS,
   STUDENT_EDITABLE_FIELDS,
+  birthDateFromParts,
+  isValidBirthDate,
+  normalizeBirthDate,
 } from "@/lib/student-fields";
 import type { ChangeRequest, DocumentSlot, Student, UploadedFile } from "@/lib/types";
+import {
+  BirthDateFields,
+  PhoneField,
+  isPhoneKey,
+  validateProfileFields,
+} from "@/components/form-fields";
 
 export default function HoSoPage() {
   const [student, setStudent] = useState<Student | null>(null);
@@ -92,12 +101,33 @@ export default function HoSoPage() {
     setMessage("");
     setError("");
     try {
+      let payload = { ...fields };
+      const normalized = normalizeBirthDate(payload.ngaySinh);
+      if (isValidBirthDate(normalized)) {
+        const [dd, mm, yyyy] = normalized.split("/");
+        payload = {
+          ...payload,
+          ngaySinh: normalized,
+          ngay: String(Number(dd)),
+          thang: String(Number(mm)),
+          nam: yyyy,
+        };
+      } else if (payload.ngay || payload.thang || payload.nam) {
+        const composed = birthDateFromParts(payload.ngay, payload.thang, payload.nam);
+        if (composed) payload.ngaySinh = composed;
+      }
+
+      const invalid = validateProfileFields(payload);
+      if (invalid) throw new Error(invalid);
+
+      setFields(payload);
+
       const res = await fetch("/api/student/change-request", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           intent,
-          proposedFields: fields,
+          proposedFields: payload,
           proposedDocuments: documents,
         }),
       });
@@ -317,20 +347,51 @@ export default function HoSoPage() {
                 {group.title}
               </h2>
               <div className="mt-3 grid gap-3 sm:grid-cols-2 sm:gap-4">
-                {group.keys.map((key) => (
-                  <label key={key} className="block text-sm">
-                    <span className="font-semibold text-foreground/75">
-                      {FIELD_LABELS[key] || key}
-                    </span>
-                    <input
-                      className="mt-1 min-h-12 w-full rounded-xl border border-border bg-white px-3 text-base"
-                      value={fields[key] || ""}
-                      onChange={(e) =>
-                        setFields((prev) => ({ ...prev, [key]: e.target.value }))
-                      }
-                    />
-                  </label>
-                ))}
+                {group.keys.map((key) => {
+                  if (key === "ngaySinh") {
+                    return (
+                      <BirthDateFields
+                        key={key}
+                        ngaySinh={fields.ngaySinh || ""}
+                        ngay={fields.ngay || ""}
+                        thang={fields.thang || ""}
+                        nam={fields.nam || ""}
+                        onChange={(next) =>
+                          setFields((prev) => ({ ...prev, ...next }))
+                        }
+                      />
+                    );
+                  }
+                  if (isPhoneKey(key)) {
+                    return (
+                      <PhoneField
+                        key={key}
+                        label={FIELD_LABELS[key] || key}
+                        value={fields[key] || ""}
+                        onChange={(v) =>
+                          setFields((prev) => ({ ...prev, [key]: v }))
+                        }
+                      />
+                    );
+                  }
+                  return (
+                    <label key={key} className="block text-sm">
+                      <span className="font-semibold text-foreground/75">
+                        {FIELD_LABELS[key] || key}
+                      </span>
+                      <input
+                        className="mt-1 min-h-12 w-full rounded-xl border border-border bg-white px-3 text-base"
+                        value={fields[key] || ""}
+                        onChange={(e) =>
+                          setFields((prev) => ({
+                            ...prev,
+                            [key]: e.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                  );
+                })}
               </div>
             </section>
           ))}
@@ -593,9 +654,6 @@ function fieldGroups() {
         "hocBong",
         "thongTinSaiLech",
         "ghiChuHoSo",
-        "ngay",
-        "thang",
-        "nam",
       ],
     },
   ] as const;

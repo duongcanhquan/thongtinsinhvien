@@ -217,6 +217,127 @@ export function normalizePhone(value: unknown): string {
   return normalizeText(value).replace(/[^\d+]/g, "");
 }
 
+/** Chỉ giữ tối đa 10 chữ số (SĐT Việt Nam). */
+export function digitsPhone10(value: unknown): string {
+  return String(value ?? "").replace(/\D/g, "").slice(0, 10);
+}
+
+/** Hợp lệ khi đủ đúng 10 số. Chuỗi rỗng = chưa điền (tuỳ ngữ cảnh). */
+export function isValidPhone10(value: unknown): boolean {
+  return /^\d{10}$/.test(digitsPhone10(value));
+}
+
+/**
+ * Chuẩn hóa ngày sinh về DD/MM/YYYY nếu parse được.
+ * Chấp nhận DD/MM/YYYY, D/M/YYYY, YYYY-MM-DD.
+ */
+export function normalizeBirthDate(value: unknown): string {
+  const raw = normalizeText(value);
+  if (!raw) return "";
+
+  let d = 0;
+  let m = 0;
+  let y = 0;
+
+  const iso = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  const dmy = raw.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
+  if (iso) {
+    y = Number(iso[1]);
+    m = Number(iso[2]);
+    d = Number(iso[3]);
+  } else if (dmy) {
+    d = Number(dmy[1]);
+    m = Number(dmy[2]);
+    y = Number(dmy[3]);
+  } else {
+    return raw;
+  }
+
+  if (!isRealCalendarDate(d, m, y)) return raw;
+  return `${pad2(d)}/${pad2(m)}/${y}`;
+}
+
+export function isValidBirthDate(value: unknown): boolean {
+  const raw = normalizeText(value);
+  if (!raw) return false;
+  if (!/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) return false;
+  const [dd, mm, yyyy] = raw.split("/").map(Number);
+  return isRealCalendarDate(dd, mm, yyyy);
+}
+
+export function birthPartsFromDate(value: unknown): {
+  ngay: string;
+  thang: string;
+  nam: string;
+} {
+  const normalized = normalizeBirthDate(value);
+  if (!isValidBirthDate(normalized)) {
+    return { ngay: "", thang: "", nam: "" };
+  }
+  const [dd, mm, yyyy] = normalized.split("/");
+  return { ngay: String(Number(dd)), thang: String(Number(mm)), nam: yyyy };
+}
+
+export function birthDateFromParts(
+  ngay: unknown,
+  thang: unknown,
+  nam: unknown
+): string {
+  const d = Number(String(ngay ?? "").replace(/\D/g, ""));
+  const m = Number(String(thang ?? "").replace(/\D/g, ""));
+  const y = Number(String(nam ?? "").replace(/\D/g, ""));
+  if (!isRealCalendarDate(d, m, y)) return "";
+  return `${pad2(d)}/${pad2(m)}/${y}`;
+}
+
+/** Format đang gõ thành DD/MM/YYYY (chỉ số + /). */
+export function maskBirthDateInput(raw: string): string {
+  const digits = raw.replace(/\D/g, "").slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+export function birthDateError(value: unknown): string | null {
+  const raw = normalizeText(value);
+  if (!raw) return null;
+  if (!/^\d{2}\/\d{2}\/\d{4}$/.test(raw)) {
+    return "Ngày sinh phải theo định dạng DD/MM/YYYY (vd: 15/08/2005)";
+  }
+  if (!isValidBirthDate(raw)) {
+    return "Ngày sinh không hợp lệ (ngày/tháng không tồn tại hoặc năm ngoài khoảng cho phép)";
+  }
+  return null;
+}
+
+export function phoneError(value: unknown, required = false): string | null {
+  const digits = digitsPhone10(value);
+  const raw = normalizeText(value);
+  if (!raw && !required) return null;
+  if (!digits) return required ? "Nhập số điện thoại 10 số" : null;
+  if (digits.length !== 10) return "Số điện thoại phải đủ đúng 10 chữ số";
+  return null;
+}
+
+function pad2(n: number) {
+  return String(n).padStart(2, "0");
+}
+
+function isRealCalendarDate(day: number, month: number, year: number) {
+  if (!Number.isInteger(day) || !Number.isInteger(month) || !Number.isInteger(year)) {
+    return false;
+  }
+  if (year < 1950 || year > new Date().getFullYear()) return false;
+  if (month < 1 || month > 12) return false;
+  if (day < 1 || day > 31) return false;
+  const dt = new Date(year, month - 1, day);
+  return (
+    dt.getFullYear() === year &&
+    dt.getMonth() === month - 1 &&
+    dt.getDate() === day
+  );
+}
+
 export function normalizeEmail(value: unknown): string {
   return normalizeText(value).toLowerCase();
 }
