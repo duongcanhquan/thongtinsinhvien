@@ -100,6 +100,11 @@ export const DOCUMENT_LABELS: Record<string, string> = {
   anhThe: "Ảnh thẻ",
 };
 
+/** Ordered Excel columns (Vietnamese header → field key), matching import layout. */
+export const EXCEL_HEADER_ORDER: { label: string; key: string }[] = Object.entries(
+  EXCEL_COLUMN_MAP
+).map(([label, key]) => ({ label, key }));
+
 /** Fields students may propose changing (everything except mã SV). */
 export const STUDENT_EDITABLE_FIELDS = [
   "hoVaTen",
@@ -147,6 +152,9 @@ export const STUDENT_EDITABLE_FIELDS = [
   "mayTinhHocTap",
   "ghiChuHoSo",
 ] as const;
+
+/** Admin form fields (mã SV shown separately as read-only). */
+export const ADMIN_EDITABLE_FIELDS = ["stt", ...STUDENT_EDITABLE_FIELDS] as const;
 
 export const FIELD_LABELS: Record<string, string> = {
   maSinhVien: "Mã sinh viên",

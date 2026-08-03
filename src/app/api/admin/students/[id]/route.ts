@@ -43,10 +43,10 @@ export async function PATCH(req: Request, { params }: Params) {
 
     const next: Student = { ...student, maSinhVien: id };
     if (body.fields) {
-      for (const key of STUDENT_EDITABLE_FIELDS) {
-        if (key in body.fields) {
-          (next as Record<string, unknown>)[key] = String(body.fields[key] ?? "");
-        }
+      const allowed = new Set<string>(["stt", ...STUDENT_EDITABLE_FIELDS]);
+      for (const key of Object.keys(body.fields)) {
+        if (!allowed.has(key)) continue;
+        (next as Record<string, unknown>)[key] = String(body.fields[key] ?? "");
       }
     }
     if (body.documents) {

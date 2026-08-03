@@ -17,11 +17,15 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
     }
 
+    if (!key.startsWith("students/")) {
+      return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });
+    }
+
     if (student && !admin) {
       const profile = await getStudent(student.maSinhVien);
       const pending = await getChangeRequest(student.maSinhVien);
       const allowed =
-        key.includes(`students/${student.maSinhVien}/`) &&
+        key.startsWith(`students/${student.maSinhVien}/`) &&
         (fileInStudent(profile, key) || fileInPending(pending, key));
       if (!allowed) {
         return NextResponse.json({ error: "FORBIDDEN" }, { status: 403 });

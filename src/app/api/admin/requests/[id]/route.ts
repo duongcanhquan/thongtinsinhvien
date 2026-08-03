@@ -8,7 +8,7 @@ import {
   upsertStudent,
 } from "@/lib/students-repo";
 import type { DocumentSlot, Student } from "@/lib/types";
-import { DOCUMENT_KEYS } from "@/lib/student-fields";
+import { DOCUMENT_KEYS, STUDENT_EDITABLE_FIELDS } from "@/lib/student-fields";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -77,8 +77,9 @@ export async function POST(req: Request, { params }: Params) {
 function sanitizeFields(fields: Record<string, unknown> | undefined) {
   const out: Record<string, string> = {};
   if (!fields) return out;
+  const allowed = new Set<string>(STUDENT_EDITABLE_FIELDS);
   for (const [k, v] of Object.entries(fields)) {
-    if (k === "maSinhVien" || k === "documents") continue;
+    if (!allowed.has(k)) continue;
     out[k] = v == null ? "" : String(v);
   }
   return out;
@@ -91,13 +92,13 @@ function mergeDocuments(
   const next = { ...current };
   for (const [key, slot] of Object.entries(proposed)) {
     if (!DOCUMENT_KEYS.has(key)) continue;
+    // Chỉ merge các slot có trong proposed (đã lọc diff phía student)
     const files = (slot.files || []).slice(0, 2);
-    const note = slot.note ?? next[key]?.note;
     const entry: DocumentSlot = {
-      status: files.length ? "co_file" : slot.status || next[key]?.status || "du",
-      files: files.length ? files : next[key]?.files || [],
+      status: files.length ? "co_file" : slot.status || "thieu",
+      files,
     };
-    if (note) entry.note = note;
+    if (slot.note) entry.note = String(slot.note);
     next[key] = entry;
   }
   return next;

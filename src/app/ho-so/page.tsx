@@ -124,11 +124,14 @@ export default function HoSoPage() {
     if (!fileList?.length || !student) return;
 
     const official = student.documents?.[fieldKey];
-    const existing = documents[fieldKey]?.files || [];
-    const status = documents[fieldKey]?.status || official?.status || "thieu";
-    const allowReplace = status === "du" || status === "co_file" || existing.length >= 2;
+    const draft = documents[fieldKey];
+    const existing = draft?.files || [];
+    const status = draft?.status || official?.status || "thieu";
+    // Chỉ thay thế khi đã đủ 2 file hoặc trạng thái "đủ" (admin đánh dấu đủ, SV thay file)
+    const replaceMode = existing.length >= 2 || status === "du";
+    const room = replaceMode ? 2 : Math.max(0, 2 - existing.length);
 
-    const incoming = Array.from(fileList).slice(0, 2);
+    const incoming = Array.from(fileList).slice(0, room || 2);
     if (!incoming.length) return;
 
     setUploadingKey(fieldKey);
@@ -177,7 +180,7 @@ export default function HoSoPage() {
 
       setDocuments((prev) => {
         const prevFiles = prev[fieldKey]?.files || [];
-        const nextFiles = allowReplace
+        const nextFiles = replaceMode
           ? uploaded.slice(0, 2)
           : [...prevFiles, ...uploaded].slice(0, 2);
         return {
@@ -190,7 +193,7 @@ export default function HoSoPage() {
         };
       });
       setMessage(
-        allowReplace
+        replaceMode
           ? "Đã bổ sung/thay thế file (chờ gửi yêu cầu để admin duyệt)."
           : "Đã bổ sung file (chờ gửi yêu cầu để admin duyệt)."
       );
@@ -345,8 +348,14 @@ export default function HoSoPage() {
               {Object.entries(DOCUMENT_LABELS).map(([key, label]) => {
                 const slot = documents[key] || { status: "thieu" as const, files: [] };
                 const official = student.documents?.[key]?.files || [];
+                const officialKeys = new Set(official.map((f) => f.key));
+                const pendingFiles = (slot.files || []).filter(
+                  (f) => !officialKeys.has(f.key)
+                );
                 const uploadLabel =
-                  slot.status === "du" ? "Bổ sung/thay thế" : "Bổ sung";
+                  slot.status === "du" || (slot.files || []).length >= 2
+                    ? "Bổ sung/thay thế"
+                    : "Bổ sung";
                 const busy = uploadingKey === key;
                 return (
                   <div
@@ -376,9 +385,9 @@ export default function HoSoPage() {
                         />
                       </label>
                     </div>
-                    {slot.files?.length ? (
+                    {pendingFiles.length ? (
                       <ul className="mt-2 space-y-1 text-sm">
-                        {slot.files.map((f) => (
+                        {pendingFiles.map((f) => (
                           <li key={f.key} className="truncate text-foreground/80">
                             (chờ duyệt) {f.name}
                           </li>

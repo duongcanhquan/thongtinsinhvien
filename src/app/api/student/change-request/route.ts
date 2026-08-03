@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getStudentSession } from "@/lib/session";
 import { DOCUMENT_KEYS, STUDENT_EDITABLE_FIELDS } from "@/lib/student-fields";
 import { getStudent, saveChangeRequest } from "@/lib/students-repo";
-import type { ChangeRequest, DocumentSlot, Student } from "@/lib/types";
+import type { ChangeRequest, DocumentSlot } from "@/lib/types";
 
 export async function POST(req: Request) {
   try {
@@ -26,8 +26,10 @@ export async function POST(req: Request) {
     for (const key of STUDENT_EDITABLE_FIELDS) {
       if (body.proposedFields && key in body.proposedFields) {
         const value = body.proposedFields[key];
-        (proposedFields as Record<string, unknown>)[key] =
-          value == null ? "" : String(value);
+        const next = value == null ? "" : String(value);
+        const prev = String((student as Record<string, unknown>)[key] ?? "");
+        if (next === prev) continue;
+        (proposedFields as Record<string, unknown>)[key] = next;
       }
     }
 
@@ -35,18 +37,36 @@ export async function POST(req: Request) {
     if (body.proposedDocuments) {
       for (const [key, slot] of Object.entries(body.proposedDocuments)) {
         if (!DOCUMENT_KEYS.has(key)) continue;
-        const files = (slot.files || []).slice(0, 2);
+        const files = (slot.files || []).slice(0, 2).map((f) => ({
+          key: String(f.key || ""),
+          name: String(f.name || ""),
+          size: Number(f.size) || 0,
+          contentType: String(f.contentType || ""),
+          uploadedAt: String(f.uploadedAt || new Date().toISOString()),
+        }));
+
+        for (const file of files) {
+          if (!isOwnedUploadKey(session.maSinhVien, key, file.key)) {
+            return NextResponse.json(
+              { error: `File không hợp lệ cho trường ${key}` },
+              { status: 400 }
+            );
+          }
+        }
+
         const entry: DocumentSlot = {
           status: files.length ? "co_file" : slot.status || "du",
           files,
         };
         if (slot.note) entry.note = String(slot.note);
+        // Chỉ lưu slot thực sự khác bản chính thức — tránh ghi đè toàn bộ khi approve
+        if (!documentSlotChanged(student.documents?.[key], entry)) continue;
         proposedDocuments[key] = entry;
       }
     }
 
-    const hasFieldDiff = hasFieldChanges(student, proposedFields);
-    const hasDocDiff = hasDocumentChanges(student, proposedDocuments);
+    const hasFieldDiff = Object.keys(proposedFields).length > 0;
+    const hasDocDiff = Object.keys(proposedDocuments).length > 0;
     const hasChanges = hasFieldDiff || hasDocDiff;
 
     // Nếu bấm "xác nhận đúng" nhưng form đã lệch bản gốc → vẫn coi là yêu cầu chỉnh sửa
@@ -76,31 +96,23 @@ export async function POST(req: Request) {
   }
 }
 
-function hasFieldChanges(
-  student: Student,
-  proposed: ChangeRequest["proposedFields"]
+function documentSlotChanged(
+  current: DocumentSlot | undefined,
+  next: DocumentSlot
 ) {
-  for (const key of STUDENT_EDITABLE_FIELDS) {
-    if (!(key in (proposed || {}))) continue;
-    const next = String((proposed as Record<string, unknown>)[key] ?? "");
-    const prev = String((student as Record<string, unknown>)[key] ?? "");
-    if (next !== prev) return true;
-  }
+  const currKeys = (current?.files || []).map((f) => f.key).join("|");
+  const nextKeys = (next.files || []).map((f) => f.key).join("|");
+  if (currKeys !== nextKeys) return true;
+  if ((next.status || "") !== (current?.status || "")) return true;
+  if ((next.note || "") !== (current?.note || "")) return true;
   return false;
 }
 
-function hasDocumentChanges(
-  student: Student,
-  proposed: Record<string, DocumentSlot>
+function isOwnedUploadKey(
+  maSinhVien: string,
+  fieldKey: string,
+  key: string
 ) {
-  for (const [key, slot] of Object.entries(proposed || {})) {
-    if (!DOCUMENT_KEYS.has(key)) continue;
-    const current = student.documents?.[key];
-    const currKeys = (current?.files || []).map((f) => f.key).join("|");
-    const nextKeys = (slot.files || []).map((f) => f.key).join("|");
-    if (currKeys !== nextKeys) return true;
-    if ((slot.status || "") !== (current?.status || "")) return true;
-    if ((slot.note || "") !== (current?.note || "")) return true;
-  }
-  return false;
+  if (!key) return false;
+  return key.startsWith(`students/${maSinhVien}/${fieldKey}/`);
 }
