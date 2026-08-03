@@ -1,20 +1,25 @@
-@import url("https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Nunito:wght@700;800;900&display=swap");
 @import "tailwindcss";
 
 :root {
-  --color-primary: #1e40af;
+  /* Cao Đẳng Việt Mỹ — navy + đỏ linh vật */
+  --color-primary: #0b2d5c;
   --color-on-primary: #ffffff;
-  --color-secondary: #3b82f6;
-  --color-accent: #16a34a;
-  --color-background: #eff6ff;
-  --color-foreground: #1e3a8a;
-  --color-muted: #e9eff5;
-  --color-border: #bfdbfe;
-  --color-destructive: #dc2626;
-  --color-ring: #1e40af;
+  --color-secondary: #1a4a8a;
+  --color-accent: #c8102e;
+  --color-accent-soft: #ffe5ea;
+  --color-background: #f3f6fb;
+  --color-foreground: #0b2d5c;
+  --color-muted: #e4ebf5;
+  --color-border: #c5d3e8;
+  --color-destructive: #b91c1c;
+  --color-ring: #0b2d5c;
   --color-surface: #ffffff;
-  --font-sans: "Fira Sans", system-ui, sans-serif;
-  --font-mono: "Fira Code", ui-monospace, monospace;
+  --color-hero-from: #071f42;
+  --color-hero-to: #13407a;
+  --font-sans: "DM Sans", system-ui, sans-serif;
+  --font-display: "Nunito", "DM Sans", system-ui, sans-serif;
+  --font-mono: "DM Sans", ui-monospace, monospace;
 }
 
 @theme inline {
@@ -22,6 +27,7 @@
   --color-on-primary: var(--color-on-primary);
   --color-secondary: var(--color-secondary);
   --color-accent: var(--color-accent);
+  --color-accent-soft: var(--color-accent-soft);
   --color-background: var(--color-background);
   --color-foreground: var(--color-foreground);
   --color-muted: var(--color-muted);
@@ -29,7 +35,10 @@
   --color-destructive: var(--color-destructive);
   --color-ring: var(--color-ring);
   --color-surface: var(--color-surface);
+  --color-hero-from: var(--color-hero-from);
+  --color-hero-to: var(--color-hero-to);
   --font-sans: var(--font-sans);
+  --font-display: var(--font-display);
   --font-mono: var(--font-mono);
 }
 
@@ -58,4 +67,40 @@ button,
 :focus-visible {
   outline: 2px solid var(--color-ring);
   outline-offset: 2px;
+}
+
+@keyframes mascot-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-mascot {
+  animation: mascot-float 4s ease-in-out infinite;
+}
+
+.animate-fade-up {
+  animation: fade-up 0.45s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-mascot,
+  .animate-fade-up {
+    animation: none;
+  }
 }
