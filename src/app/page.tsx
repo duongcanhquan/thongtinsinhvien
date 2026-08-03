@@ -130,7 +130,7 @@ export default function HomePage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.35, duration: 0.5, ease: easeOut }}
             >
-              Cổng tra cứu sinh viên
+              Tra cứu dữ liệu
             </motion.p>
             <motion.div
               className="mt-8 h-1 w-28 overflow-hidden rounded-full bg-white/20"
@@ -204,8 +204,7 @@ export default function HomePage() {
               animate={introDone ? { opacity: 1, y: 0 } : undefined}
               transition={{ duration: 0.5, ease: easeOut, delay: 0.22 }}
             >
-              Tra cứu thông tin
-              <span className="block text-white/95">sinh viên</span>
+              Tra cứu dữ liệu
             </motion.h1>
 
             <motion.p
@@ -263,9 +262,6 @@ export default function HomePage() {
                   )}
                 </motion.button>
               </div>
-              <p className="mt-2 text-left text-xs leading-snug text-foreground/55">
-                Chỉ cần một thông tin — hệ thống hiện đủ 4 trường để bạn xác nhận.
-              </p>
             </motion.form>
           </motion.div>
 
@@ -464,12 +460,6 @@ export default function HomePage() {
 
         <footer className="mt-12 border-t border-border/70 pt-6 text-center text-xs text-foreground/45">
           <p>Thành viên Tập đoàn Giáo dục EQuest</p>
-          <a
-            href="/admin"
-            className="mt-2 inline-block text-secondary underline-offset-2 hover:underline"
-          >
-            Dành cho quản lý đào tạo
-          </a>
         </footer>
       </div>
     </main>
