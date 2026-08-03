@@ -10,7 +10,10 @@ export async function GET(req: Request) {
     }
     const q = new URL(req.url).searchParams.get("q") || "";
     const students = await searchStudentsAdmin(q);
-    return NextResponse.json({ students });
+    return NextResponse.json({
+      students,
+      total: students.length,
+    });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Lỗi máy chủ";
     return NextResponse.json({ error: message }, { status: 500 });

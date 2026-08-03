@@ -15,7 +15,7 @@
 - Editable: all fields except `maSinhVien`
 - Pending overwrite; session 2–4h + IP rate-limit
 - Upload: max 2 files/field, pdf/image, ≤15MB; R2; admin download; SV sees files after approve
-- Excel from row 3; skip existing `maSinhVien`
+- Excel from row 3; existing `maSinhVien` → update fields (keep uploaded files)
 - Admin: `/admin` + `ADMIN_PASSWORD`
 - Follow `design-system/thong-tin-sinh-vien/MASTER.md`
 - Do not commit secrets; no commit unless user asks

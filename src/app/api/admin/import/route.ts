@@ -6,7 +6,8 @@ import {
   cellToString,
 } from "@/lib/student-fields";
 import {
-  studentExists,
+  getStudent,
+  mergeDocumentSlots,
   studentFromFields,
   upsertStudent,
 } from "@/lib/students-repo";
@@ -57,7 +58,7 @@ export async function POST(req: Request) {
     });
 
     let added = 0;
-    let skipped = 0;
+    let updated = 0;
     const errors: string[] = [];
 
     for (let r = 2; r < rows.length; r++) {
@@ -77,12 +78,24 @@ export async function POST(req: Request) {
         continue;
       }
 
-      if (await studentExists(student.maSinhVien)) {
-        skipped += 1;
+      const now = new Date().toISOString();
+      const existing = await getStudent(student.maSinhVien);
+
+      if (existing) {
+        // Refresh scalar fields from Excel; keep uploaded files on document slots
+        const merged = {
+          ...existing,
+          ...student,
+          documents: mergeDocumentSlots(existing.documents, student.documents),
+          createdAt: existing.createdAt || now,
+          importedAt: existing.importedAt || now,
+          updatedAt: now,
+        };
+        await upsertStudent(merged);
+        updated += 1;
         continue;
       }
 
-      const now = new Date().toISOString();
       student.importedAt = now;
       student.createdAt = now;
       student.updatedAt = now;
@@ -91,7 +104,7 @@ export async function POST(req: Request) {
     }
 
     void headerIndex;
-    return NextResponse.json({ ok: true, added, skipped, errors });
+    return NextResponse.json({ ok: true, added, updated, skipped: 0, errors });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Lỗi máy chủ";
     return NextResponse.json({ error: message }, { status: 500 });
