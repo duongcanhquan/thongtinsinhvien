@@ -111,9 +111,10 @@ async function main() {
 
   const ma = student.maSinhVien;
   const originalPhone = String(student.soDienThoai || "");
-  const testPhone = originalPhone.endsWith("9")
-    ? `${originalPhone.slice(0, -1)}8`
-    : `${originalPhone || "090000000"}9`;
+  // Đổi đúng 1 số cuối, giữ đủ 10 chữ số (không vượt quá → bị digitsPhone10 cắt mất)
+  const digits = originalPhone.replace(/\D/g, "").slice(0, 10).padEnd(10, "0");
+  const testPhone =
+    digits.slice(0, 9) + (digits.endsWith("9") ? "8" : "9");
 
   // Student search
   {
