@@ -233,7 +233,7 @@ export default function HomePage() {
 
         <div className="relative mx-auto grid max-w-5xl gap-6 px-4 pb-8 pt-8 sm:px-6 lg:grid-cols-[1.1fr_0.9fr] lg:items-end lg:gap-10 lg:pb-0 lg:pt-10">
           <motion.div
-            className="z-10 flex flex-col items-center text-center lg:items-start lg:pb-12 lg:text-left"
+            className="relative z-30 flex flex-col items-center text-center lg:items-start lg:pb-12 lg:text-left"
             initial={reduceMotion ? false : { opacity: 0, y: 28 }}
             animate={introDone ? { opacity: 1, y: 0 } : { opacity: 0, y: 28 }}
             transition={{ duration: 0.55, ease: easeOut, delay: reduceMotion ? 0 : 0.05 }}
@@ -264,7 +264,7 @@ export default function HomePage() {
 
             <motion.form
               onSubmit={onSearch}
-              className="relative z-30 mt-5 w-full max-w-md rounded-2xl bg-white p-3 shadow-xl shadow-black/25 sm:p-4"
+              className="relative z-40 mt-5 w-full max-w-md rounded-2xl bg-white p-3 shadow-xl shadow-black/25 sm:p-4"
               initial={reduceMotion ? false : { opacity: 0, y: 24, scale: 0.96 }}
               animate={introDone ? { opacity: 1, y: 0, scale: 1 } : undefined}
               transition={{ duration: 0.5, ease: easeOut, delay: 0.32 }}
@@ -310,7 +310,7 @@ export default function HomePage() {
                       <motion.ul
                         id="search-suggest"
                         role="listbox"
-                        className="absolute left-0 right-0 top-[calc(100%+6px)] z-40 max-h-72 overflow-auto rounded-xl border border-border bg-white py-1 shadow-2xl shadow-black/20"
+                        className="absolute left-0 right-0 top-[calc(100%+6px)] z-50 max-h-72 overflow-auto rounded-xl border border-border bg-white py-1 shadow-2xl shadow-black/25"
                         initial={{ opacity: 0, y: -6 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -4 }}
@@ -361,42 +361,53 @@ export default function HomePage() {
             </motion.form>
           </motion.div>
 
-          <motion.div
-            className="relative mx-auto flex w-full max-w-sm justify-center lg:max-w-none lg:justify-end"
-            initial={reduceMotion ? false : { opacity: 0, x: 40, scale: 0.9 }}
-            animate={introDone ? { opacity: 1, x: 0, scale: 1 } : undefined}
-            transition={{ duration: 0.65, ease: easeOut, delay: 0.28 }}
+          <div
+            className={`relative z-0 mx-auto w-full max-w-sm transition-opacity duration-200 lg:max-w-none ${
+              openSuggest && query.trim().length >= 2
+                ? "pointer-events-none opacity-40 lg:pointer-events-auto lg:opacity-100"
+                : ""
+            }`}
+            aria-hidden={
+              openSuggest && query.trim().length >= 2 ? true : undefined
+            }
           >
             <motion.div
-              className="relative z-10 w-[min(78vw,320px)] lg:w-[380px]"
-              animate={
-                reduceMotion
-                  ? undefined
-                  : { y: [0, -10, 0], rotate: [0, 0.6, 0, -0.6, 0] }
-              }
-              transition={
-                reduceMotion
-                  ? undefined
-                  : { duration: 5.5, repeat: Infinity, ease: "easeInOut" }
-              }
+              className="relative flex w-full justify-center lg:justify-end"
+              initial={reduceMotion ? false : { opacity: 0, x: 40, scale: 0.9 }}
+              animate={introDone ? { opacity: 1, x: 0, scale: 1 } : undefined}
+              transition={{ duration: 0.65, ease: easeOut, delay: 0.28 }}
             >
               <motion.div
-                className="absolute -inset-3 rounded-[2.2rem] bg-gradient-to-tr from-accent/40 via-white/10 to-sky-300/30 blur-md"
-                animate={reduceMotion ? undefined : { opacity: [0.45, 0.8, 0.45] }}
-                transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut" }}
-                aria-hidden
-              />
-              <Image
-                src="/mascot-lyon.jpg"
-                alt="Linh vật sư tử Cao Đẳng Việt Mỹ"
-                width={760}
-                height={760}
-                priority
-                className="relative h-auto w-full rounded-[2rem] object-cover object-top shadow-2xl shadow-black/40 ring-4 ring-white/25"
-              />
-              <LyonSpeech reduceMotion={!!reduceMotion} ready={introDone} />
+                className="relative z-0 w-[min(78vw,320px)] lg:w-[380px]"
+                animate={
+                  reduceMotion
+                    ? undefined
+                    : { y: [0, -10, 0], rotate: [0, 0.6, 0, -0.6, 0] }
+                }
+                transition={
+                  reduceMotion
+                    ? undefined
+                    : { duration: 5.5, repeat: Infinity, ease: "easeInOut" }
+                }
+              >
+                <motion.div
+                  className="absolute -inset-3 rounded-[2.2rem] bg-gradient-to-tr from-accent/40 via-white/10 to-sky-300/30 blur-md"
+                  animate={reduceMotion ? undefined : { opacity: [0.45, 0.8, 0.45] }}
+                  transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut" }}
+                  aria-hidden
+                />
+                <Image
+                  src="/mascot-lyon.jpg"
+                  alt="Linh vật sư tử Cao Đẳng Việt Mỹ"
+                  width={760}
+                  height={760}
+                  priority
+                  className="relative h-auto w-full rounded-[2rem] object-cover object-top shadow-2xl shadow-black/40 ring-4 ring-white/25"
+                />
+                <LyonSpeech reduceMotion={!!reduceMotion} ready={introDone} />
+              </motion.div>
             </motion.div>
-          </motion.div>
+          </div>
         </div>
 
         <div className="h-6 bg-gradient-to-b from-transparent to-background lg:h-10" />
