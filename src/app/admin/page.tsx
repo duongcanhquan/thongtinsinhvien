@@ -22,7 +22,13 @@ import {
   isValidBirthDate,
   normalizeBirthDate,
 } from "@/lib/student-fields";
-import type { ChangeRequest, DocumentSlot, Student, UploadedFile } from "@/lib/types";
+import type {
+  ChangeRequest,
+  DocumentSlot,
+  Student,
+  StudentIdentity,
+  UploadedFile,
+} from "@/lib/types";
 import {
   BirthDateFields,
   PhoneField,
@@ -32,6 +38,7 @@ import {
 
 type Tab = "requests" | "students" | "create" | "import";
 type EditMode = "create" | "edit";
+type RequestRow = ChangeRequest & { student?: StudentIdentity };
 
 const FIELD_GROUPS: { title: string; keys: readonly string[] }[] = [
   {
@@ -97,10 +104,10 @@ export default function AdminPage() {
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState("");
   const [tab, setTab] = useState<Tab>("requests");
-  const [requests, setRequests] = useState<ChangeRequest[]>([]);
+  const [requests, setRequests] = useState<RequestRow[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [q, setQ] = useState("");
-  const [selected, setSelected] = useState<ChangeRequest | null>(null);
+  const [selected, setSelected] = useState<RequestRow | null>(null);
   const [requestStudent, setRequestStudent] = useState<Student | null>(null);
   const [editDraft, setEditDraft] = useState<Record<string, string>>({});
   const [editStudent, setEditStudent] = useState<Student | null>(null);
@@ -160,7 +167,7 @@ export default function AdminPage() {
     }
   }
 
-  async function openRequest(r: ChangeRequest) {
+  async function openRequest(r: RequestRow) {
     setSelected(r);
     setNote("");
     setError("");
@@ -183,6 +190,13 @@ export default function AdminPage() {
           : String((student as Record<string, unknown>)[key] ?? "");
     }
     setEditDraft(draft);
+  }
+
+  function closeRequestDetail() {
+    setSelected(null);
+    setRequestStudent(null);
+    setNote("");
+    setEditDraft({});
   }
 
   const changedKeys = useMemo(() => {
@@ -295,9 +309,7 @@ export default function AdminPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Thất bại");
-      setSelected(null);
-      setRequestStudent(null);
-      setNote("");
+      closeRequestDetail();
       await refreshRequests();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Lỗi");
@@ -687,210 +699,141 @@ export default function AdminPage() {
       ) : null}
 
       {tab === "requests" ? (
-        <section className="mt-6 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+        <section className="mt-6 grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
           <div className="space-y-2">
+            <h2 className="text-sm font-semibold text-foreground/70">
+              Danh sách yêu cầu ({requests.length})
+            </h2>
             {requests.length === 0 ? (
               <p className="rounded-xl border border-dashed border-border p-6 text-sm text-foreground/60">
                 Không có yêu cầu pending.
               </p>
             ) : (
-              requests.map((r) => (
-                <button
-                  key={r.maSinhVien}
-                  type="button"
-                  onClick={() => void openRequest(r)}
-                  className={`w-full rounded-xl border px-4 py-3 text-left ${
-                    selected?.maSinhVien === r.maSinhVien
-                      ? "border-primary bg-primary/5"
-                      : "border-border bg-surface"
-                  }`}
-                >
-                  <span className="font-mono text-sm">{r.maSinhVien}</span>
-                  <span className="mt-1 block text-xs text-foreground/50">
-                    {r.intent === "confirm" ? "Xác nhận đúng" : "Yêu cầu chỉnh sửa"} ·{" "}
-                    {new Date(r.updatedAt).toLocaleString("vi-VN")}
-                  </span>
-                </button>
-              ))
+              requests.map((r) => {
+                const id = r.student;
+                const active = selected?.maSinhVien === r.maSinhVien;
+                return (
+                  <button
+                    key={r.maSinhVien}
+                    type="button"
+                    onClick={() => void openRequest(r)}
+                    className={`w-full rounded-xl border px-4 py-3 text-left transition ${
+                      active
+                        ? "border-primary bg-primary/5 ring-1 ring-primary/30"
+                        : "border-border bg-surface hover:border-primary/40"
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <p className="font-semibold leading-snug text-primary">
+                        {id?.hoVaTen || "—"}
+                      </p>
+                      <span
+                        className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                          r.intent === "confirm"
+                            ? "bg-emerald-100 text-emerald-800"
+                            : "bg-amber-100 text-amber-900"
+                        }`}
+                      >
+                        {r.intent === "confirm" ? "Xác nhận đúng" : "Chỉnh sửa"}
+                      </span>
+                    </div>
+                    <dl className="mt-2 space-y-1 text-sm">
+                      <div className="flex gap-2">
+                        <dt className="w-28 shrink-0 text-foreground/50">Mã SV</dt>
+                        <dd className="font-mono font-semibold break-all">
+                          {r.maSinhVien}
+                        </dd>
+                      </div>
+                      <div className="flex gap-2">
+                        <dt className="w-28 shrink-0 text-foreground/50">CCCD</dt>
+                        <dd className="break-all">{id?.canCuoc || "—"}</dd>
+                      </div>
+                      <div className="flex gap-2">
+                        <dt className="w-28 shrink-0 text-foreground/50">
+                          Số điện thoại
+                        </dt>
+                        <dd className="break-all">{id?.soDienThoai || "—"}</dd>
+                      </div>
+                    </dl>
+                    <p className="mt-2 text-[11px] text-foreground/45">
+                      {new Date(r.updatedAt).toLocaleString("vi-VN")} · Bấm để xem
+                      chi tiết
+                    </p>
+                  </button>
+                );
+              })
             )}
           </div>
 
-          {selected && requestStudent ? (
-            <div className="space-y-4 rounded-2xl border border-border bg-surface p-5">
-              <div>
-                <h2 className="text-lg font-semibold">
-                  {selected.intent === "confirm"
-                    ? "Xác nhận đúng"
-                    : "Yêu cầu chỉnh sửa"}
-                </h2>
-                <dl className="mt-3 grid gap-2 rounded-xl bg-muted/50 p-3 text-sm sm:grid-cols-2">
-                  <Info label="Họ và tên" value={requestStudent.hoVaTen} />
-                  <Info label="Mã sinh viên" value={requestStudent.maSinhVien} />
-                  <Info label="CCCD" value={String(requestStudent.canCuoc || "")} />
-                  <Info label="SĐT" value={String(requestStudent.soDienThoai || "")} />
-                </dl>
-              </div>
+          {/* Desktop: panel bên phải */}
+          <div className="hidden lg:block">
+            {selected && requestStudent ? (
+              <RequestDetailPanel
+                selected={selected}
+                requestStudent={requestStudent}
+                changedKeys={changedKeys}
+                changedDocs={changedDocs}
+                editDraft={editDraft}
+                setEditDraft={setEditDraft}
+                note={note}
+                setNote={setNote}
+                busy={busy}
+                decide={decide}
+                downloadKey={downloadKey}
+                previewFile={previewFile}
+              />
+            ) : selected ? (
+              <p className="text-sm text-foreground/60">Đang tải hồ sơ sinh viên…</p>
+            ) : (
+              <p className="rounded-2xl border border-dashed border-border p-8 text-sm text-foreground/55">
+                Chọn một yêu cầu bên trái để xem và duyệt.
+              </p>
+            )}
+          </div>
 
-              {selected.intent !== "confirm" ? (
-                <>
-                  <div>
-                    <h3 className="text-sm font-semibold">Trường thay đổi</h3>
-                    {changedKeys.length === 0 && changedDocs.length === 0 ? (
-                      <p className="mt-2 text-sm text-foreground/60">
-                        Không có diff trường (có thể chỉ xác nhận / file).
-                      </p>
-                    ) : (
-                      <div className="mt-2 overflow-x-auto">
-                        <table className="min-w-full text-left text-sm">
-                          <thead className="bg-muted/60 text-xs uppercase text-foreground/60">
-                            <tr>
-                              <th className="px-2 py-2">Trường</th>
-                              <th className="px-2 py-2">Cũ</th>
-                              <th className="px-2 py-2">Mới / Admin sửa</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {changedKeys.map((key) => (
-                              <tr key={key} className="border-t border-border/70 align-top">
-                                <td className="px-2 py-2 font-medium">
-                                  {FIELD_LABELS[key] || key}
-                                </td>
-                                <td className="px-2 py-2 text-foreground/60 break-all">
-                                  {String(
-                                    (requestStudent as Record<string, unknown>)[key] ?? "—"
-                                  )}
-                                </td>
-                                <td className="px-2 py-2">
-                                  <input
-                                    className="min-h-10 w-full rounded-lg border border-border px-2"
-                                    value={editDraft[key] || ""}
-                                    onChange={(e) =>
-                                      setEditDraft((prev) => ({
-                                        ...prev,
-                                        [key]: e.target.value,
-                                      }))
-                                    }
-                                  />
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-
-                  {changedDocs.length ? (
-                    <div>
-                      <h3 className="text-sm font-semibold">
-                        Giấy tờ thay đổi (cũ → mới)
-                      </h3>
-                      <div className="mt-2 space-y-3">
-                        {changedDocs.map((key) => {
-                          const slot = selected.proposedDocuments?.[key];
-                          const curr = requestStudent.documents?.[key];
-                          return (
-                            <div
-                              key={key}
-                              className="rounded-xl border border-border/80 p-3 text-sm"
-                            >
-                              <p className="font-medium">
-                                {DOCUMENT_LABELS[key] || key}
-                              </p>
-                              <p className="mt-1 text-xs text-foreground/55">
-                                Trạng thái: {curr?.status || "—"} →{" "}
-                                {slot?.status || "—"}
-                                {slot?.note || curr?.note
-                                  ? ` · Ghi chú: ${curr?.note || "—"} → ${slot?.note || "—"}`
-                                  : ""}
-                              </p>
-                              <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                                <div>
-                                  <p className="text-xs font-semibold uppercase text-foreground/50">
-                                    Cũ
-                                  </p>
-                                  <div className="mt-1 flex flex-wrap gap-2">
-                                    {(curr?.files || []).length ? (
-                                      (curr?.files || []).map((f) => (
-                                        <FileActions
-                                          key={f.key}
-                                          file={f}
-                                          onDownload={() => void downloadKey(f.key)}
-                                          onPreview={() => void previewFile(f)}
-                                        />
-                                      ))
-                                    ) : (
-                                      <span className="text-foreground/45">—</span>
-                                    )}
-                                  </div>
-                                </div>
-                                <div>
-                                  <p className="text-xs font-semibold uppercase text-foreground/50">
-                                    Mới
-                                  </p>
-                                  <div className="mt-1 flex flex-wrap gap-2">
-                                    {(slot?.files || []).length ? (
-                                      (slot?.files || []).map((f) => (
-                                        <FileActions
-                                          key={f.key}
-                                          file={f}
-                                          onDownload={() => void downloadKey(f.key)}
-                                          onPreview={() => void previewFile(f)}
-                                        />
-                                      ))
-                                    ) : (
-                                      <span className="text-foreground/45">—</span>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ) : null}
-                </>
-              ) : (
-                <p className="rounded-xl bg-accent/10 px-3 py-2 text-sm text-accent">
-                  Sinh viên xác nhận hồ sơ hiện tại là đúng.
-                </p>
-              )}
-
-              <label className="block text-sm">
-                Ghi chú admin
-                <input
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  className="mt-1 min-h-11 w-full rounded-lg border border-border px-3"
-                />
-              </label>
-
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() =>
-                    void decide(
-                      selected.intent === "confirm" ? "approve" : "edit_approve"
-                    )
-                  }
-                  className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-accent px-4 font-semibold text-white disabled:opacity-50"
-                >
-                  <Check /> Valid / Duyệt
-                </button>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void decide("reject")}
-                  className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-destructive px-4 font-semibold text-white disabled:opacity-50"
-                >
-                  <X /> Từ chối
-                </button>
+          {/* Mobile: popup */}
+          {selected ? (
+            <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4 lg:hidden">
+              <div
+                className="flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-background shadow-2xl sm:rounded-2xl"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Chi tiết yêu cầu chỉnh sửa"
+              >
+                <div className="flex items-center justify-between border-b border-border px-4 py-3">
+                  <h2 className="font-semibold">Chi tiết yêu cầu</h2>
+                  <button
+                    type="button"
+                    className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-lg border border-border"
+                    onClick={closeRequestDetail}
+                    aria-label="Đóng"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+                <div className="overflow-y-auto p-4">
+                  {requestStudent ? (
+                    <RequestDetailPanel
+                      selected={selected}
+                      requestStudent={requestStudent}
+                      changedKeys={changedKeys}
+                      changedDocs={changedDocs}
+                      editDraft={editDraft}
+                      setEditDraft={setEditDraft}
+                      note={note}
+                      setNote={setNote}
+                      busy={busy}
+                      decide={decide}
+                      downloadKey={downloadKey}
+                      previewFile={previewFile}
+                      compact
+                    />
+                  ) : (
+                    <p className="text-sm text-foreground/60">Đang tải hồ sơ…</p>
+                  )}
+                </div>
               </div>
             </div>
-          ) : selected ? (
-            <p className="text-sm text-foreground/60">Đang tải hồ sơ sinh viên…</p>
           ) : null}
         </section>
       ) : null}
@@ -1070,6 +1013,207 @@ export default function AdminPage() {
         </div>
       ) : null}
     </main>
+  );
+}
+
+function RequestDetailPanel({
+  selected,
+  requestStudent,
+  changedKeys,
+  changedDocs,
+  editDraft,
+  setEditDraft,
+  note,
+  setNote,
+  busy,
+  decide,
+  downloadKey,
+  previewFile,
+  compact,
+}: {
+  selected: RequestRow;
+  requestStudent: Student;
+  changedKeys: string[];
+  changedDocs: string[];
+  editDraft: Record<string, string>;
+  setEditDraft: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  note: string;
+  setNote: (v: string) => void;
+  busy: boolean;
+  decide: (action: "approve" | "reject" | "edit_approve") => Promise<void>;
+  downloadKey: (key: string) => Promise<void>;
+  previewFile: (file: UploadedFile) => Promise<void>;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className={`space-y-4 ${
+        compact ? "" : "rounded-2xl border border-border bg-surface p-5"
+      }`}
+    >
+      <div>
+        <h2 className="text-lg font-semibold">
+          {selected.intent === "confirm" ? "Xác nhận đúng" : "Yêu cầu chỉnh sửa"}
+        </h2>
+        <dl className="mt-3 grid gap-2 rounded-xl bg-muted/50 p-3 text-sm sm:grid-cols-2">
+          <Info label="Họ và tên" value={requestStudent.hoVaTen} />
+          <Info label="Mã sinh viên" value={requestStudent.maSinhVien} />
+          <Info label="CCCD" value={String(requestStudent.canCuoc || "")} />
+          <Info label="SĐT" value={String(requestStudent.soDienThoai || "")} />
+        </dl>
+      </div>
+
+      {selected.intent !== "confirm" ? (
+        <>
+          <div>
+            <h3 className="text-sm font-semibold">Trường thay đổi</h3>
+            {changedKeys.length === 0 && changedDocs.length === 0 ? (
+              <p className="mt-2 text-sm text-foreground/60">
+                Không có diff trường (có thể chỉ xác nhận / file).
+              </p>
+            ) : (
+              <div className="mt-2 overflow-x-auto">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="bg-muted/60 text-xs uppercase text-foreground/60">
+                    <tr>
+                      <th className="px-2 py-2">Trường</th>
+                      <th className="px-2 py-2">Cũ</th>
+                      <th className="px-2 py-2">Mới / Admin sửa</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {changedKeys.map((key) => (
+                      <tr key={key} className="border-t border-border/70 align-top">
+                        <td className="px-2 py-2 font-medium">
+                          {FIELD_LABELS[key] || key}
+                        </td>
+                        <td className="px-2 py-2 text-foreground/60 break-all">
+                          {String(
+                            (requestStudent as Record<string, unknown>)[key] ?? "—"
+                          )}
+                        </td>
+                        <td className="px-2 py-2">
+                          <input
+                            className="min-h-10 w-full rounded-lg border border-border px-2"
+                            value={editDraft[key] || ""}
+                            onChange={(e) =>
+                              setEditDraft((prev) => ({
+                                ...prev,
+                                [key]: e.target.value,
+                              }))
+                            }
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {changedDocs.length ? (
+            <div>
+              <h3 className="text-sm font-semibold">Giấy tờ thay đổi (cũ → mới)</h3>
+              <div className="mt-2 space-y-3">
+                {changedDocs.map((key) => {
+                  const slot = selected.proposedDocuments?.[key];
+                  const curr = requestStudent.documents?.[key];
+                  return (
+                    <div
+                      key={key}
+                      className="rounded-xl border border-border/80 p-3 text-sm"
+                    >
+                      <p className="font-medium">{DOCUMENT_LABELS[key] || key}</p>
+                      <p className="mt-1 text-xs text-foreground/55">
+                        Trạng thái: {curr?.status || "—"} → {slot?.status || "—"}
+                        {slot?.note || curr?.note
+                          ? ` · Ghi chú: ${curr?.note || "—"} → ${slot?.note || "—"}`
+                          : ""}
+                      </p>
+                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                        <div>
+                          <p className="text-xs font-semibold uppercase text-foreground/50">
+                            Cũ
+                          </p>
+                          <div className="mt-1 flex flex-wrap gap-2">
+                            {(curr?.files || []).length ? (
+                              (curr?.files || []).map((f) => (
+                                <FileActions
+                                  key={f.key}
+                                  file={f}
+                                  onDownload={() => void downloadKey(f.key)}
+                                  onPreview={() => void previewFile(f)}
+                                />
+                              ))
+                            ) : (
+                              <span className="text-foreground/45">—</span>
+                            )}
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold uppercase text-foreground/50">
+                            Mới
+                          </p>
+                          <div className="mt-1 flex flex-wrap gap-2">
+                            {(slot?.files || []).length ? (
+                              (slot?.files || []).map((f) => (
+                                <FileActions
+                                  key={f.key}
+                                  file={f}
+                                  onDownload={() => void downloadKey(f.key)}
+                                  onPreview={() => void previewFile(f)}
+                                />
+                              ))
+                            ) : (
+                              <span className="text-foreground/45">—</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <p className="rounded-xl bg-accent/10 px-3 py-2 text-sm text-accent">
+          Sinh viên xác nhận hồ sơ hiện tại là đúng.
+        </p>
+      )}
+
+      <label className="block text-sm">
+        Ghi chú admin
+        <input
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          className="mt-1 min-h-11 w-full rounded-lg border border-border px-3"
+        />
+      </label>
+
+      <div className="flex flex-wrap gap-2 pb-2">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() =>
+            void decide(selected.intent === "confirm" ? "approve" : "edit_approve")
+          }
+          className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-accent px-4 font-semibold text-white disabled:opacity-50 sm:flex-none"
+        >
+          <Check /> Valid / Duyệt
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void decide("reject")}
+          className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-destructive px-4 font-semibold text-white disabled:opacity-50 sm:flex-none"
+        >
+          <X /> Từ chối
+        </button>
+      </div>
+    </div>
   );
 }
 

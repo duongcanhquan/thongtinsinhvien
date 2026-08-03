@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/session";
-import { listPendingRequests } from "@/lib/students-repo";
+import { getStudent, listPendingRequests, toIdentity } from "@/lib/students-repo";
 
 export async function GET() {
   try {
@@ -10,7 +10,26 @@ export async function GET() {
     }
     const requests = await listPendingRequests();
     requests.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
-    return NextResponse.json({ requests });
+
+    const enriched = await Promise.all(
+      requests.map(async (r) => {
+        const student = await getStudent(r.maSinhVien);
+        return {
+          ...r,
+          student: student
+            ? toIdentity(student)
+            : {
+                maSinhVien: r.maSinhVien,
+                hoVaTen: "",
+                emailCaNhan: "",
+                soDienThoai: "",
+                canCuoc: "",
+              },
+        };
+      })
+    );
+
+    return NextResponse.json({ requests: enriched });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Lỗi máy chủ";
     return NextResponse.json({ error: message }, { status: 500 });
