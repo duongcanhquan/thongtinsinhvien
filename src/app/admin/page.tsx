@@ -955,11 +955,12 @@ export default function AdminPage() {
 
               <section>
                 <h3 className="mb-2 font-semibold text-primary">
-                  Giấy tờ / ảnh — Admin upload thay sinh viên
+                  Giấy tờ / ảnh — Admin được bổ sung / thay thế mọi mục
                 </h3>
                 <p className="mb-3 text-sm text-foreground/60">
-                  Tối đa 2 file/trường (PDF hoặc ảnh). Khi đang sửa SV có sẵn, file
-                  được lưu ngay vào hồ sơ chính thức sau khi upload.
+                  <span className="font-semibold text-emerald-700">Xanh = Đủ</span>,{" "}
+                  <span className="font-semibold text-destructive">Đỏ = Thiếu</span>.
+                  Admin luôn có quyền upload/thay file mọi trường (kể cả đã Đủ).
                 </p>
                 <div className="space-y-3">
                   {Object.entries(DOCUMENT_LABELS).map(([key, label]) => {
@@ -969,18 +970,42 @@ export default function AdminPage() {
                         files: [],
                       };
                     const busyUpload = uploadingKey === key;
+                    const isDu = slot.status === "du";
+                    const isThieu = slot.status === "thieu";
                     return (
                       <div
                         key={key}
-                        className="rounded-xl border border-border/80 bg-muted/30 p-3"
+                        className={`rounded-xl border p-3 ${
+                          isDu
+                            ? "border-emerald-200 bg-emerald-50/80"
+                            : isThieu
+                              ? "border-destructive/25 bg-red-50/70"
+                              : "border-amber-200 bg-amber-50/60"
+                        }`}
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div>
                             <p className="font-medium">{label}</p>
-                            <p className="text-xs text-foreground/55">
-                              Trạng thái: {slot.status}
-                              {slot.note ? ` · ${slot.note}` : ""}
-                            </p>
+                            <span
+                              className={`mt-1 inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold text-white ${
+                                isDu
+                                  ? "bg-emerald-600"
+                                  : isThieu
+                                    ? "bg-destructive"
+                                    : "bg-amber-500"
+                              }`}
+                            >
+                              {isDu
+                                ? "Đủ"
+                                : isThieu
+                                  ? "Thiếu"
+                                  : "Có file"}
+                            </span>
+                            {slot.note ? (
+                              <p className="mt-1 text-xs text-foreground/55">
+                                {slot.note}
+                              </p>
+                            ) : null}
                           </div>
                           <div className="flex flex-wrap items-center gap-2">
                             <select
@@ -1008,9 +1033,7 @@ export default function AdminPage() {
                               <FileArrowUp size={16} weight="bold" />
                               {busyUpload
                                 ? "Đang tải…"
-                                : (slot.files || []).length
-                                  ? "Bổ sung / thay"
-                                  : "Upload tài liệu"}
+                                : "Bổ sung / thay thế"}
                               <input
                                 type="file"
                                 accept="application/pdf,image/*,.pdf,.jpg,.jpeg,.png,.webp,.gif,.heic,.heif"
@@ -1045,7 +1068,7 @@ export default function AdminPage() {
                           ))}
                           {!slot.files?.length ? (
                             <span className="text-xs text-foreground/50">
-                              Chưa có file — bấm Upload tài liệu
+                              Chưa có file
                             </span>
                           ) : null}
                         </div>

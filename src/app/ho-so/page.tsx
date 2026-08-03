@@ -124,15 +124,20 @@ export default function HoSoPage() {
     if (!fileList?.length || !student) return;
 
     const official = student.documents?.[fieldKey];
+    const officialStatus = official?.status || "thieu";
+    if (officialStatus === "du") {
+      setError("Mục này đã đủ — không cần bổ sung. Liên hệ quản lý nếu cần thay đổi.");
+      return;
+    }
+
     const draft = documents[fieldKey];
     const existing = draft?.files || [];
-    const status = draft?.status || official?.status || "thieu";
-    // Chỉ thay thế khi đã đủ 2 file hoặc trạng thái "đủ" (admin đánh dấu đủ, SV thay file)
-    const replaceMode = existing.length >= 2 || status === "du";
-    const room = replaceMode ? 2 : Math.max(0, 2 - existing.length);
-
+    const room = Math.max(0, 2 - existing.length);
     const incoming = Array.from(fileList).slice(0, room || 2);
-    if (!incoming.length) return;
+    if (!incoming.length) {
+      setError("Đã đủ tối đa 2 file cho mục này.");
+      return;
+    }
 
     setUploadingKey(fieldKey);
     setError("");
@@ -180,9 +185,7 @@ export default function HoSoPage() {
 
       setDocuments((prev) => {
         const prevFiles = prev[fieldKey]?.files || [];
-        const nextFiles = replaceMode
-          ? uploaded.slice(0, 2)
-          : [...prevFiles, ...uploaded].slice(0, 2);
+        const nextFiles = [...prevFiles, ...uploaded].slice(0, 2);
         return {
           ...prev,
           [fieldKey]: {
@@ -192,11 +195,7 @@ export default function HoSoPage() {
           },
         };
       });
-      setMessage(
-        replaceMode
-          ? "Đã bổ sung/thay thế file (chờ gửi yêu cầu để admin duyệt)."
-          : "Đã bổ sung file (chờ gửi yêu cầu để admin duyệt)."
-      );
+      setMessage("Đã bổ sung file (chờ gửi yêu cầu để admin duyệt).");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Lỗi upload");
     } finally {
@@ -341,55 +340,72 @@ export default function HoSoPage() {
               Giấy tờ / tệp đính kèm
             </h2>
             <p className="mt-1 text-sm text-foreground/60">
-              Tối đa 2 file/trường, PDF hoặc ảnh, mỗi file ≤ 15MB. File mới chỉ
-              chính thức sau khi admin duyệt.
+              <span className="font-semibold text-emerald-700">Xanh = Đủ</span>{" "}
+              (không cần nộp thêm).{" "}
+              <span className="font-semibold text-destructive">Đỏ = Thiếu</span>{" "}
+              — bấm <strong>Bổ sung</strong> để tải file. Tối đa 2 file/trường,
+              PDF hoặc ảnh ≤ 15MB. File mới chỉ chính thức sau khi admin duyệt.
             </p>
             <div className="mt-4 space-y-3">
               {Object.entries(DOCUMENT_LABELS).map(([key, label]) => {
-                const slot = documents[key] || { status: "thieu" as const, files: [] };
-                const official = student.documents?.[key]?.files || [];
+                const officialSlot = student.documents?.[key];
+                const officialStatus = officialSlot?.status || "thieu";
+                const isDu = officialStatus === "du";
+                const isThieu = officialStatus === "thieu";
+                const slot = documents[key] || {
+                  status: "thieu" as const,
+                  files: [],
+                };
+                const official = officialSlot?.files || [];
                 const officialKeys = new Set(official.map((f) => f.key));
                 const pendingFiles = (slot.files || []).filter(
                   (f) => !officialKeys.has(f.key)
                 );
-                const uploadLabel =
-                  slot.status === "du" || (slot.files || []).length >= 2
-                    ? "Bổ sung/thay thế"
-                    : "Bổ sung";
                 const busy = uploadingKey === key;
+                const canUpload = !isDu;
                 return (
                   <div
                     key={key}
-                    className="rounded-xl border border-border/80 bg-muted/40 p-3 sm:p-4"
+                    className={`rounded-xl border p-3 sm:p-4 ${
+                      isDu
+                        ? "border-emerald-200 bg-emerald-50/80"
+                        : isThieu
+                          ? "border-destructive/25 bg-red-50/70"
+                          : "border-amber-200 bg-amber-50/60"
+                    }`}
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
                         <p className="font-semibold">{label}</p>
-                        <p className="text-xs text-foreground/60">
-                          Trạng thái: {statusLabel(slot.status)}
-                        </p>
+                        <StatusBadge status={officialStatus} />
                       </div>
-                      <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-border bg-white px-3 text-sm font-semibold disabled:opacity-50">
-                        <FileArrowUp size={18} />
-                        {busy ? "Đang tải…" : uploadLabel}
-                        <input
-                          type="file"
-                          accept="application/pdf,image/*,.pdf,.jpg,.jpeg,.png,.webp,.gif,.heic,.heif"
-                          multiple
-                          disabled={busy || saving}
-                          className="sr-only"
-                          onChange={(e) => {
-                            void uploadFiles(key, e.target.files);
-                            e.target.value = "";
-                          }}
-                        />
-                      </label>
+                      {canUpload ? (
+                        <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl bg-accent px-3 text-sm font-semibold text-white disabled:opacity-50">
+                          <FileArrowUp size={18} />
+                          {busy ? "Đang tải…" : "Bổ sung"}
+                          <input
+                            type="file"
+                            accept="application/pdf,image/*,.pdf,.jpg,.jpeg,.png,.webp,.gif,.heic,.heif"
+                            multiple
+                            disabled={busy || saving}
+                            className="sr-only"
+                            onChange={(e) => {
+                              void uploadFiles(key, e.target.files);
+                              e.target.value = "";
+                            }}
+                          />
+                        </label>
+                      ) : (
+                        <span className="inline-flex min-h-11 items-center rounded-xl bg-emerald-600 px-3 text-sm font-bold text-white">
+                          Đã đủ
+                        </span>
+                      )}
                     </div>
                     {pendingFiles.length ? (
                       <ul className="mt-2 space-y-1 text-sm">
                         {pendingFiles.map((f) => (
-                          <li key={f.key} className="truncate text-foreground/80">
-                            (chờ duyệt) {f.name}
+                          <li key={f.key} className="truncate text-amber-900">
+                            (chờ admin duyệt) {f.name}
                           </li>
                         ))}
                       </ul>
@@ -493,10 +509,26 @@ async function downloadFile(key: string) {
   window.open(data.url, "_blank", "noopener,noreferrer");
 }
 
-function statusLabel(status: string) {
-  if (status === "du") return "Đủ";
-  if (status === "co_file") return "Có file";
-  return "Thiếu";
+function StatusBadge({ status }: { status: string }) {
+  if (status === "du") {
+    return (
+      <span className="mt-1 inline-flex items-center rounded-full bg-emerald-600 px-2.5 py-0.5 text-xs font-bold text-white">
+        Đủ
+      </span>
+    );
+  }
+  if (status === "co_file") {
+    return (
+      <span className="mt-1 inline-flex items-center rounded-full bg-amber-500 px-2.5 py-0.5 text-xs font-bold text-white">
+        Có file (chờ xử lý)
+      </span>
+    );
+  }
+  return (
+    <span className="mt-1 inline-flex items-center rounded-full bg-destructive px-2.5 py-0.5 text-xs font-bold text-white">
+      Thiếu — cần bổ sung
+    </span>
+  );
 }
 
 function fieldGroups() {
