@@ -84,33 +84,36 @@ export async function POST(req: Request) {
 
       if (await studentExists(student.maSinhVien)) {
         skipped += 1;
-        // Bổ sung / cập nhật link Drive ảnh cho hồ sơ đã có (không đụng field khác)
-        const photoUrl = extractHttpUrl(student.documents?.anh?.externalUrl);
-        if (photoUrl) {
-          const existing = await getStudent(student.maSinhVien);
-          if (existing) {
-            const prev = existing.documents?.anh || {
+        // Cập nhật link Drive cho mọi cột giấy tờ có hyperlink (không ghi đè field khác)
+        const existing = await getStudent(student.maSinhVien);
+        if (existing) {
+          let changed = false;
+          const nextDocs = { ...(existing.documents || {}) };
+          for (const key of DOCUMENT_KEYS) {
+            const incoming = student.documents?.[key];
+            const photoUrl = extractHttpUrl(incoming?.externalUrl);
+            if (!photoUrl) continue;
+            const prev = nextDocs[key] || {
               status: "thieu" as const,
               files: [],
             };
-            if (prev.externalUrl !== photoUrl) {
-              const note =
-                cellToString(student.documents?.anh?.note) ||
-                cellToString(prev.note);
-              existing.documents = {
-                ...(existing.documents || {}),
-                anh: {
-                  ...prev,
-                  status: prev.status === "thieu" ? "du" : prev.status,
-                  externalUrl: photoUrl,
-                  ...(note ? { note } : {}),
-                  files: prev.files || [],
-                },
-              };
-              existing.updatedAt = new Date().toISOString();
-              await upsertStudent(existing);
-              linksUpdated += 1;
-            }
+            if (prev.externalUrl === photoUrl) continue;
+            const note =
+              cellToString(incoming?.note) || cellToString(prev.note);
+            nextDocs[key] = {
+              ...prev,
+              status: prev.status === "thieu" ? "du" : prev.status,
+              externalUrl: photoUrl,
+              ...(note ? { note } : {}),
+              files: prev.files || [],
+            };
+            changed = true;
+          }
+          if (changed) {
+            existing.documents = nextDocs;
+            existing.updatedAt = new Date().toISOString();
+            await upsertStudent(existing);
+            linksUpdated += 1;
           }
         }
         continue;

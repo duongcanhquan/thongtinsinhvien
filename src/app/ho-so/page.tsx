@@ -32,6 +32,12 @@ export default function HoSoPage() {
   const [pending, setPending] = useState<ChangeRequest | null>(null);
   const [fields, setFields] = useState<Record<string, string>>({});
   const [documents, setDocuments] = useState<Record<string, DocumentSlot>>({});
+  const [baselineFields, setBaselineFields] = useState<Record<string, string>>(
+    {}
+  );
+  const [baselineDocuments, setBaselineDocuments] = useState<
+    Record<string, DocumentSlot>
+  >({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
@@ -65,10 +71,22 @@ export default function HoSoPage() {
         base[key] = value;
       }
       setFields(base);
-      setDocuments({
-        ...(data.student.documents || {}),
-        ...(data.pending?.proposedDocuments || {}),
-      });
+      const officialDocs = data.student.documents || {};
+      const proposedDocs = (data.pending?.proposedDocuments ||
+        {}) as Record<string, DocumentSlot>;
+      const mergedDocs: Record<string, DocumentSlot> = { ...officialDocs };
+      for (const [key, slot] of Object.entries(proposedDocs)) {
+        const prev = officialDocs[key];
+        mergedDocs[key] = {
+          status: slot.status || prev?.status || "thieu",
+          files: slot.files?.length ? slot.files : prev?.files || [],
+          note: slot.note ?? prev?.note,
+          externalUrl: slot.externalUrl ?? prev?.externalUrl,
+        };
+      }
+      setDocuments(mergedDocs);
+      setBaselineFields(base);
+      setBaselineDocuments(mergedDocs);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Lỗi");
     } finally {
@@ -82,21 +100,22 @@ export default function HoSoPage() {
     if (!student) return false;
     for (const key of STUDENT_EDITABLE_FIELDS) {
       const next = String(fields[key] ?? "");
-      const prev = String((student as Record<string, unknown>)[key] ?? "");
+      const prev = String(baselineFields[key] ?? "");
       if (next !== prev) return true;
     }
     for (const key of Object.keys(DOCUMENT_LABELS)) {
       if (!isStudentUploadableDocument(key)) continue;
-      const curr = student.documents?.[key];
+      const curr = baselineDocuments[key];
       const next = documents[key];
       const currKeys = (curr?.files || []).map((f) => f.key).join("|");
       const nextKeys = (next?.files || []).map((f) => f.key).join("|");
       if (currKeys !== nextKeys) return true;
       if ((next?.status || "") !== (curr?.status || "")) return true;
       if ((next?.note || "") !== (curr?.note || "")) return true;
+      if ((next?.externalUrl || "") !== (curr?.externalUrl || "")) return true;
     }
     return false;
-  }, [student, fields, documents]);
+  }, [student, fields, documents, baselineFields, baselineDocuments]);
 
   async function submitRequest(intent: "edit" | "confirm") {
     setSaving(true);
@@ -136,6 +155,8 @@ export default function HoSoPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Gửi yêu cầu thất bại");
       setPending(data.request);
+      setBaselineFields(payload);
+      setBaselineDocuments(documents);
       if (data.intent === "confirm") {
         setMessage("Đã xác nhận hồ sơ đúng. Cảm ơn bạn!");
       } else if (intent === "confirm" && data.hasChanges) {

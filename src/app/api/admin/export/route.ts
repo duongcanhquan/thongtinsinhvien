@@ -33,7 +33,7 @@ export async function GET() {
       return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
     }
 
-    const students = await listStudents(5000);
+    const students = await listStudents(20000);
     students.sort((a, b) => {
       const sa = Number(a.stt);
       const sb = Number(b.stt);

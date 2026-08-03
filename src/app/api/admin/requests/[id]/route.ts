@@ -203,16 +203,15 @@ function mergeDocuments(
   for (const [key, slot] of Object.entries(proposed)) {
     if (!DOCUMENT_KEYS.has(key)) continue;
     const files = (slot.files || []).slice(0, 2);
+    const prev = current[key];
     const entry: DocumentSlot = {
       status: files.length ? "co_file" : slot.status || "thieu",
       files,
     };
-    if (slot.note) entry.note = String(slot.note).slice(0, 500);
-    if (slot.externalUrl) {
-      entry.externalUrl = String(slot.externalUrl).slice(0, 2000);
-    } else if (current[key]?.externalUrl) {
-      entry.externalUrl = current[key].externalUrl;
-    }
+    const note = String(slot.note ?? prev?.note ?? "").trim();
+    if (note) entry.note = note.slice(0, 500);
+    const url = String(slot.externalUrl || "").trim() || prev?.externalUrl || "";
+    if (url) entry.externalUrl = String(url).slice(0, 2000);
     next[key] = entry;
   }
   return next;

@@ -271,14 +271,12 @@ export default function AdminPage() {
   }
 
   function openCreateTab() {
-    setTab("create");
-    // Luôn mở form trống khi vào tab nhập mới (trừ khi vừa tạo xong đang sửa tiếp)
-    if (editMode !== "create" || !editStudent) {
-      setError("");
-      setMessage("");
-      setEditMode("create");
-      setEditStudent(blankStudent());
+    // Giữ form đang nhập / vừa tạo xong trên tab này; chỉ reset khi vào tab từ chỗ khác không có form create
+    if (tab === "create" && editStudent) {
+      setTab("create");
+      return;
     }
+    startCreateStudent();
   }
 
   async function decide(action: "approve" | "reject" | "edit_approve") {
@@ -335,6 +333,10 @@ export default function AdminPage() {
 
   async function saveStudent() {
     if (!editStudent) return;
+    if (uploadingKey) {
+      setError("Đang upload file — chờ xong rồi mới lưu / tạo sinh viên.");
+      return;
+    }
     const ma = String(editStudent.maSinhVien || "").trim();
     if (!ma) {
       setError("Nhập mã sinh viên");
@@ -424,7 +426,19 @@ export default function AdminPage() {
       return;
     }
 
-    const existing = editStudent.documents?.[fieldKey]?.files || [];
+    // Create mode: chặn upload nếu mã đã tồn tại (tránh kẹt đổi mã sau khi có file)
+    if (editMode === "create") {
+      const check = await fetch(`/api/admin/students/${encodeURIComponent(ma)}`);
+      if (check.ok) {
+        setError(
+          "Mã sinh viên đã tồn tại — đổi mã khác hoặc mở hồ sơ ở tab Sinh viên để sửa."
+        );
+        return;
+      }
+    }
+
+    const prevSlot = editStudent.documents?.[fieldKey];
+    const existing = prevSlot?.files || [];
     const replace = existing.length >= 2;
     const room = Math.max(0, 2 - existing.length);
     const incoming = Array.from(fileList).slice(0, replace ? 2 : room || 2);
@@ -474,9 +488,11 @@ export default function AdminPage() {
       const nextDocuments = {
         ...(editStudent.documents || {}),
         [fieldKey]: {
+          ...prevSlot,
           status: "co_file" as const,
           files: nextFiles,
-          note: editStudent.documents?.[fieldKey]?.note,
+          note: prevSlot?.note,
+          externalUrl: prevSlot?.externalUrl,
         },
       };
 
@@ -1788,16 +1804,18 @@ function StudentEditor({
       <div className="sticky bottom-0 -mx-1 border-t border-border bg-surface/95 pt-4 backdrop-blur">
         <button
           type="button"
-          disabled={busy}
+          disabled={busy || Boolean(uploadingKey)}
           onClick={saveStudent}
           className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 text-base font-extrabold text-on-primary shadow-lg shadow-primary/25 transition hover:bg-secondary disabled:opacity-50 sm:w-auto"
         >
           <Check size={20} weight="bold" />
           {busy
             ? "Đang lưu…"
-            : editMode === "create"
-              ? "Tạo sinh viên"
-              : "Lưu thay đổi thông tin"}
+            : uploadingKey
+              ? "Đang upload file…"
+              : editMode === "create"
+                ? "Tạo sinh viên"
+                : "Lưu thay đổi thông tin"}
         </button>
       </div>
     </div>

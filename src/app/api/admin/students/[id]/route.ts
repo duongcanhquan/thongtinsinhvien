@@ -62,16 +62,16 @@ export async function PATCH(req: Request, { params }: Params) {
             );
           }
         }
+        const prev = student.documents?.[key];
         const entry: DocumentSlot = {
           status: files.length ? "co_file" : slot.status,
           files,
         };
-        if (slot.note) entry.note = String(slot.note);
-        const url = String(slot.externalUrl || "").trim();
+        const note = String(slot.note ?? prev?.note ?? "").trim();
+        if (note) entry.note = note;
+        const url =
+          String(slot.externalUrl || "").trim() || prev?.externalUrl || "";
         if (url) entry.externalUrl = url.slice(0, 2000);
-        else if (student.documents?.[key]?.externalUrl && !("externalUrl" in slot)) {
-          entry.externalUrl = student.documents[key].externalUrl;
-        }
         next.documents[key] = entry;
       }
     }
