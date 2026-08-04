@@ -94,13 +94,20 @@ function nameMatches(entry: DirectoryEntry, nameQ: string): boolean {
 
   const parts = nameQ.split(/\s+/).filter((t) => t.length >= 2);
 
-  // Nhiều từ: mỗi từ phải có trong tên (vd. Ngọc Anh ⊂ Bùi Thị Ngọc Anh)
+  // Nhiều từ: mỗi từ phải khớp token (từ ngắn) hoặc có trong tên (từ dài)
   if (parts.length > 1) {
-    return parts.every(
-      (t) =>
+    return parts.every((t) => {
+      const ft = foldDiacritics(t);
+      if (t.length <= 3) {
+        return tokenHit(nameTokens, t) || tokenHit(foldTokens, ft);
+      }
+      return (
+        tokenHit(nameTokens, t) ||
+        tokenHit(foldTokens, ft) ||
         entry.name.includes(t) ||
-        entry.nameFold.includes(foldDiacritics(t))
-    );
+        entry.nameFold.includes(ft)
+      );
+    });
   }
 
   // Một từ ngắn (≤3): chỉ khớp token/prefix — tránh "anh" ⊂ "thanh"

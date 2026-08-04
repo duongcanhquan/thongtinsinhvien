@@ -78,6 +78,21 @@ const vanAnh = entry({
 });
 assert(classifyDirectoryMatch(vanAnh, "anh") === "name", "token ANH still matches");
 
+const khanh = entry({ maSinhVien: "x3", hoVaTen: "HOÀNG NGỌC KHÁNH" });
+const oanh = entry({ maSinhVien: "x4", hoVaTen: "CHU THỊ NGỌC OANH" });
+assert(
+  classifyDirectoryMatch(khanh, "Ngọc Anh") === null,
+  "Ngọc Anh must NOT match KHÁNH"
+);
+assert(
+  classifyDirectoryMatch(oanh, "Ngọc Anh") === null,
+  "Ngọc Anh must NOT match OANH"
+);
+assert(
+  classifyDirectoryMatch(ngocAnh, "Ngọc Anh") === "name",
+  "Ngọc Anh still matches BÙI THỊ NGỌC ANH"
+);
+
 if (failed) {
   console.error(`\n${failed} assertion(s) failed`);
   process.exit(1);
