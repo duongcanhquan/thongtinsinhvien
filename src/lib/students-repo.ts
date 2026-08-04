@@ -225,9 +225,39 @@ export function firestoreUserMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Lỗi máy chủ";
 }
 
+/** Bỏ dấu tiếng Việt để tìm "ngoc anh" vẫn ra "NGỌC ANH". */
+function foldDiacritics(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "d");
+}
+
+function nameMatchesQuery(hoVaTen: string, nameQ: string): boolean {
+  if (nameQ.length < 2) return false;
+  const name = normalizeName(hoVaTen);
+  if (!name) return false;
+  if (name.includes(nameQ)) return true;
+
+  const foldedName = foldDiacritics(name);
+  const foldedQ = foldDiacritics(nameQ);
+  if (foldedName.includes(foldedQ)) return true;
+
+  // Nhiều từ: mỗi từ phải có trong tên (vd. "Ngọc Anh" ⊂ "Bùi Thị Ngọc Anh")
+  const tokens = nameQ.split(/\s+/).filter((t) => t.length >= 2);
+  if (tokens.length > 1) {
+    return tokens.every(
+      (t) => name.includes(t) || foldedName.includes(foldDiacritics(t))
+    );
+  }
+  return false;
+}
+
 /**
  * Tìm SV bằng query có chỉ mục — KHÔNG đọc toàn bộ collection.
  * Hỗ trợ: mã SV, SĐT, email, CCCD (khớp), tên (token / tiền tố).
+ * Fallback cache in-memory: khớp giữa tên / không dấu (tránh miss "Ngọc Anh").
  */
 export async function findStudentsByQuery(
   query: string,
@@ -254,7 +284,7 @@ export async function findStudentsByQuery(
   };
 
   // 1) Tra cứu đúng mã SV (1 read)
-  if (idQ.length >= 3) {
+  if (/^\d{8,}$/.test(idQ)) {
     const byId = await withFirestoreRetry(() =>
       db.collection("students").doc(normalizeText(query)).get()
     );
@@ -304,10 +334,15 @@ export async function findStudentsByQuery(
       const snap = await db
         .collection("students")
         .where("searchTokens", "array-contains-any", tokens)
-        .limit(limit)
+        .limit(Math.max(limit * 3, 24))
         .get();
       for (const doc of snap.docs) {
-        pushDoc(doc.id, doc.data() as Student);
+        const data = doc.data() as Student;
+        // Nhiều từ → bắt buộc đủ token trong tên (tránh OR quá rộng)
+        if (tokens.length > 1 && !nameMatchesQuery(data.hoVaTen || "", nameQ)) {
+          continue;
+        }
+        pushDoc(doc.id, data);
       }
     } catch {
       // Index chưa sẵn / field chưa có — bỏ qua, thử prefix bên dưới
@@ -351,7 +386,65 @@ export async function findStudentsByQuery(
     }
   }
 
+  if (matches.length >= limit) return matches;
+
+  // 6) Fallback cache: khớp giữa tên / không dấu — 1 lần đọc collection / TTL
+  //    Sửa case "Ngọc Anh", "anh", "ngoc" vốn không phải tiền tố họ tên.
+  try {
+    const all = await getCachedStudents();
+    for (const data of all) {
+      if (matches.length >= limit) break;
+      const id = data.maSinhVien;
+      if (seen.has(id)) continue;
+
+      const phone = normalizePhone(data.soDienThoai);
+      const email = normalizeEmail(data.emailCaNhan);
+      const cccd = normalizeCccd(data.canCuoc);
+      const ma = normalizeText(data.maSinhVien).toLowerCase();
+
+      const hit =
+        nameMatchesQuery(data.hoVaTen || "", nameQ) ||
+        (phoneQ.length >= 3 && phone.includes(phoneQ)) ||
+        (cccdQ.length >= 3 && cccd.includes(cccdQ)) ||
+        (emailQ.length >= 3 && email.includes(emailQ)) ||
+        (idQ.length >= 3 && ma.includes(idQ));
+
+      if (hit) pushDoc(id, data);
+    }
+  } catch {
+    // Quota / cache fail — trả những gì indexed đã tìm được
+  }
+
   return matches;
+}
+
+/** Backfill searchTokens / hoVaTenLower cho toàn bộ hồ sơ (admin). */
+export async function backfillSearchMeta(): Promise<{
+  total: number;
+  updated: number;
+}> {
+  const all = await getCachedStudents(true);
+  const db = getDb();
+  const CHUNK = 400;
+  let updated = 0;
+
+  for (let i = 0; i < all.length; i += CHUNK) {
+    const chunk = all.slice(i, i + CHUNK);
+    const batch = db.batch();
+    for (const student of chunk) {
+      const meta = buildSearchMeta(student);
+      batch.set(
+        db.collection("students").doc(student.maSinhVien),
+        stripUndefined(meta),
+        { merge: true }
+      );
+      updated += 1;
+    }
+    await batch.commit();
+  }
+
+  invalidateStudentCache();
+  return { total: all.length, updated };
 }
 
 export async function getStudent(maSinhVien: string): Promise<Student | null> {
