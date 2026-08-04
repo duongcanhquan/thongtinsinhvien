@@ -50,16 +50,28 @@ export async function POST(req: Request) {
       );
     }
 
+    // Dòng 1–2: tiêu đề (ưu tiên dòng 2 tiếng Việt). Dòng 3+ (index 2): dữ liệu SV
     const headerRow = pickHeaderRow(rows);
     const colKeys = headerRow.map((h) => {
       const label = cellToString(h);
       return EXCEL_COLUMN_MAP[label] || null;
     });
 
+    if (colKeys.filter(Boolean).length < 3) {
+      return NextResponse.json(
+        {
+          error:
+            "Không nhận diện được tiêu đề cột (cần dòng 2 tiếng Việt: STT, Họ và tên, Mã sinh viên, …)",
+        },
+        { status: 400 }
+      );
+    }
+
     let added = 0;
     let updated = 0;
     const errors: string[] = [];
 
+    // Excel row 3 = index 2
     for (let r = 2; r < rows.length; r++) {
       const row = rows[r];
       if (!row || row.every((c) => cellToString(c) === "")) continue;
@@ -115,6 +127,13 @@ export async function POST(req: Request) {
 function pickHeaderRow(
   rows: (string | number | Date | null)[][]
 ): (string | number | Date | null)[] {
+  // Ưu tiên dòng 2 (index 1) — tiêu đề tiếng Việt chuẩn file K26
+  const row2 = rows[1] || [];
+  const hits2 = row2
+    .map((c) => cellToString(c))
+    .filter((l) => l in EXCEL_COLUMN_MAP).length;
+  if (hits2 >= 3) return row2;
+
   for (const row of rows.slice(0, 2)) {
     const labels = row.map((c) => cellToString(c));
     const hits = labels.filter((l) => l in EXCEL_COLUMN_MAP).length;

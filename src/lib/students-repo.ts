@@ -1,5 +1,6 @@
 import { getDb } from "@/lib/firebase-admin";
 import {
+  ADMIN_EDITABLE_FIELDS,
   DOCUMENT_KEYS,
   cellToString,
   extractHttpUrl,
@@ -100,48 +101,57 @@ export function studentFromFields(
 
 /**
  * Ghi đè thông tin từ bản Excel lên hồ sơ đã có.
- * Giữ: createdAt, file R2 đã upload. Cập nhật: field, trạng thái giấy tờ, note, link Drive.
+ * - Mọi trường dữ liệu có trong file mới → lấy theo file mới
+ * - Giữ: createdAt, file R2 đã upload trên hệ thống
+ * - Cập nhật: trạng thái giấy tờ, note, link Drive từ Excel
  */
 export function mergeStudentFromImport(
   existing: Student,
   incoming: Student
 ): Student {
   const now = new Date().toISOString();
-  const next: Student = {
+  const next: Record<string, unknown> = {
     ...existing,
-    ...incoming,
     maSinhVien: existing.maSinhVien,
-    createdAt: existing.createdAt || incoming.createdAt || now,
+    createdAt: existing.createdAt || now,
     importedAt: now,
     updatedAt: now,
-    documents: emptyDocuments(),
   };
+
+  // Cập nhật toàn bộ trường thông tin theo Excel (kể cả ô trống)
+  next.hoVaTen = String(incoming.hoVaTen ?? "");
+  for (const key of ADMIN_EDITABLE_FIELDS) {
+    if (key === "hoVaTen") continue;
+    next[key] = String((incoming as Record<string, unknown>)[key] ?? "");
+  }
 
   const prevDocs = existing.documents || {};
   const inDocs = incoming.documents || {};
+  const documents: Record<string, DocumentSlot> = {};
   for (const key of DOCUMENT_KEYS) {
     const prev = prevDocs[key] || { status: "thieu" as const, files: [] };
     const inc = inDocs[key] || { status: "thieu" as const, files: [] };
     const slot: DocumentSlot = {
-      status: inc.status || prev.status || "thieu",
-      files: prev.files?.length ? prev.files : [],
+      status: inc.status || "thieu",
+      files: prev.files?.length ? [...prev.files] : [],
     };
-    const note = cellToString(inc.note) || cellToString(prev.note);
-    if (note) slot.note = note;
+    if (inc.note) slot.note = String(inc.note);
+    else if (prev.note) slot.note = prev.note;
     const url =
       extractHttpUrl(inc.externalUrl) || extractHttpUrl(prev.externalUrl);
     if (url) slot.externalUrl = url;
-    // Có file R2 hoặc link Drive mà Excel để trống status → không hạ xuống thiếu oan
+    // Có file R2 hoặc link Drive mà Excel để trống → không hạ xuống thiếu oan
     if (
       slot.status === "thieu" &&
       ((slot.files && slot.files.length > 0) || slot.externalUrl)
     ) {
       slot.status = slot.files?.length ? "co_file" : "du";
     }
-    next.documents[key] = slot;
+    documents[key] = slot;
   }
+  next.documents = documents;
 
-  return stripUndefined(next);
+  return stripUndefined(next as Student);
 }
 
 export function toIdentity(student: Student): StudentIdentity {

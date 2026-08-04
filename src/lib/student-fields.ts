@@ -55,6 +55,7 @@ export const EXCEL_COLUMN_MAP: Record<string, string> = {
   "Tờ khai sinh viên": "toKhaiSinhVien",
   CCCD: "cccdFile",
   "Giấy khai sinh": "giayKhaiSinh",
+  "Giấy khai sinh ": "giayKhaiSinh",
   "Chứng nhận hoàn thành THPT": "chungNhanHoanThanhThpt",
   "Chứng nhận TN/kết quả thi THPT": "chungNhanTnKetQuaThiThpt",
   "Bằng THPT": "bangThpt",
