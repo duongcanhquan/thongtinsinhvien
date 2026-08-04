@@ -3,9 +3,10 @@ import * as XLSX from "xlsx";
 import { getAdminSession } from "@/lib/session";
 import {
   DOCUMENT_KEYS,
-  EXCEL_COLUMN_MAP,
+  EXCEL_EXPORT_LAYOUT,
   cellToString,
   extractHttpUrl,
+  resolveExcelColumnKey,
 } from "@/lib/student-fields";
 import {
   getStudent,
@@ -15,6 +16,9 @@ import {
 } from "@/lib/students-repo";
 
 export const runtime = "nodejs";
+
+/** Dòng dữ liệu SV bắt đầu (Excel row 3 = index 2). */
+const DATA_START_ROW = 2;
 
 export async function POST(req: Request) {
   try {
@@ -41,27 +45,26 @@ export async function POST(req: Request) {
       header: 1,
       defval: "",
       raw: false,
+      blankrows: true,
     });
 
-    if (rows.length < 3) {
+    if (rows.length <= DATA_START_ROW) {
       return NextResponse.json(
-        { error: "File cần ít nhất 3 dòng (2 dòng thông tin + dữ liệu)" },
+        {
+          error:
+            "File cần ít nhất 3 dòng: dòng 1–2 tiêu đề, từ dòng 3 là dữ liệu sinh viên",
+        },
         { status: 400 }
       );
     }
 
-    // Dòng 1–2: tiêu đề (ưu tiên dòng 2 tiếng Việt). Dòng 3+ (index 2): dữ liệu SV
-    const headerRow = pickHeaderRow(rows);
-    const colKeys = headerRow.map((h) => {
-      const label = cellToString(h);
-      return EXCEL_COLUMN_MAP[label] || null;
-    });
-
-    if (colKeys.filter(Boolean).length < 3) {
+    // Tiêu đề ở dòng 1–2; dữ liệu từ dòng 3. Nếu không map được chữ → dùng thứ tự cột template K26.
+    const colKeys = buildColumnKeys(rows);
+    if (!colKeys.includes("maSinhVien")) {
       return NextResponse.json(
         {
           error:
-            "Không nhận diện được tiêu đề cột (cần dòng 2 tiếng Việt: STT, Họ và tên, Mã sinh viên, …)",
+            "Không tìm thấy cột Mã sinh viên. Kiểm tra file đúng khuôn (dòng 2 có «Mã sinh viên» hoặc đúng thứ tự cột file K26).",
         },
         { status: 400 }
       );
@@ -71,8 +74,7 @@ export async function POST(req: Request) {
     let updated = 0;
     const errors: string[] = [];
 
-    // Excel row 3 = index 2
-    for (let r = 2; r < rows.length; r++) {
+    for (let r = DATA_START_ROW; r < rows.length; r++) {
       const row = rows[r];
       if (!row || row.every((c) => cellToString(c) === "")) continue;
 
@@ -124,22 +126,44 @@ export async function POST(req: Request) {
   }
 }
 
+/**
+ * Map cột theo tiêu đề (ưu tiên dòng 2 tiếng Việt).
+ * Nếu không đủ cột nhận diện → fallback đúng thứ tự template K26 (EXCEL_EXPORT_LAYOUT).
+ */
+function buildColumnKeys(
+  rows: (string | number | Date | null)[][]
+): (string | null)[] {
+  const headerRow = pickHeaderRow(rows);
+  const mapped = headerRow.map((h) => resolveExcelColumnKey(h));
+  const hits = mapped.filter(Boolean).length;
+  const hasMaSv = mapped.includes("maSinhVien");
+
+  if (hits >= 3 && hasMaSv) {
+    return mapped;
+  }
+
+  // Fallback: thứ tự cột cố định như file SINH VIÊN K26
+  return EXCEL_EXPORT_LAYOUT.map((c) => c.key);
+}
+
 function pickHeaderRow(
   rows: (string | number | Date | null)[][]
 ): (string | number | Date | null)[] {
-  // Ưu tiên dòng 2 (index 1) — tiêu đề tiếng Việt chuẩn file K26
-  const row2 = rows[1] || [];
-  const hits2 = row2
-    .map((c) => cellToString(c))
-    .filter((l) => l in EXCEL_COLUMN_MAP).length;
-  if (hits2 >= 3) return row2;
+  // Ưu tiên dòng 2 (index 1) — tiếng Việt
+  const candidates = [rows[1], rows[0], rows[2]].filter(Boolean) as (
+    | (string | number | Date | null)[]
+  )[];
 
-  for (const row of rows.slice(0, 2)) {
-    const labels = row.map((c) => cellToString(c));
-    const hits = labels.filter((l) => l in EXCEL_COLUMN_MAP).length;
-    if (hits >= 3) return row;
+  let best = candidates[0] || [];
+  let bestHits = 0;
+  for (const row of candidates) {
+    const hits = row.map((c) => resolveExcelColumnKey(c)).filter(Boolean).length;
+    if (hits > bestHits) {
+      bestHits = hits;
+      best = row;
+    }
   }
-  return rows[1] || rows[0] || [];
+  return best;
 }
 
 /** Đọc hyperlink Excel (vd. Drive) tại dòng/cột 0-based. */

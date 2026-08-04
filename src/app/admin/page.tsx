@@ -1187,9 +1187,9 @@ export default function AdminPage() {
               Import Excel
             </h2>
             <p className="mt-2 text-sm text-foreground/65">
-              Đọc từ dòng 3. <strong>Trùng mã SV → cập nhật</strong> thông tin từ
-              file mới; mã chưa có → thêm mới. File đã upload trên hệ thống được
-              giữ; link Drive / trạng thái giấy tờ theo Excel.
+              Đọc <strong>dữ liệu từ dòng 3</strong> (dòng 1–2 là tiêu đề).{" "}
+              <strong>Trùng mã SV → cập nhật</strong> theo file mới; mã chưa có →
+              thêm mới. File upload trên hệ thống được giữ.
             </p>
             <label className="mt-5 inline-flex min-h-12 cursor-pointer items-center gap-2 rounded-xl border-2 border-dashed border-primary/30 bg-muted/50 px-5 text-sm font-bold text-primary transition hover:border-primary hover:bg-muted">
               <FileArrowUp size={18} weight="bold" />

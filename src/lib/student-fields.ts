@@ -65,7 +65,65 @@ export const EXCEL_COLUMN_MAP: Record<string, string> = {
   "Thông tin cư trú": "thongTinCuTru",
   "Giấy khám sức khỏe": "giayKhamSucKhoe",
   "Ảnh thẻ": "anhThe",
+  // English headers (row 1 of K26 template)
+  "No.": "stt",
+  "Full Name": "hoVaTen",
+  "Student ID": "maSinhVien",
+  Gender: "gioiTinh",
+  "Date of Birth": "ngaySinh",
+  Day: "ngay",
+  Month: "thang",
+  Year: "nam",
+  "Phone Number": "soDienThoai",
+  "University Email": "emailTruong",
+  "Personal Email": "emailCaNhan",
+  Region: "khuVuc",
+  "Permanent Address": "diaChiThuongTru",
+  "Current Address": "diaChiTamTru",
+  "Training Program": "heDaoTao",
+  Faculty: "khoaDaoTao",
+  Major: "nganh",
+  "Admission Cohort": "khoaBanDau",
+  "Current Cohort": "khoaHienTai",
+  "Place of Birth": "noiSinh",
+  Ethnicity: "danToc",
+  "ID Card": "canCuoc",
+  "Enrollment Date": "ngayNhapHoc",
+  "Admissions Counseling": "tuVanTuyenSinh",
+  Campus: "coSoHoc",
+  "Father's Full Name": "hoTenCha",
+  "Father's Phone Number": "sdtCha",
+  "Mother's Full Name": "hoTenMe",
+  "Mother's Phone Number": "sdtMe",
+  Guardian: "nguoiGiamHo",
+  "Guardian's Phone Number": "sdtNguoiGiamHo",
+  "High School": "truongThpt",
+  "High School Province": "tinhTruong",
+  "Priority Group": "doiTuong",
+  "Average Score": "diemTrungBinh",
+  Scholarship: "hocBong",
+  PHOTO: "anh",
+  "Incorrect Information": "thongTinSaiLech",
+  Laptop: "mayTinhHocTap",
 };
+
+/** Chuẩn hoá nhãn cột để map (bỏ khoảng trắng thừa, NFC). */
+export function normalizeHeaderLabel(value: unknown): string {
+  return cellToString(value);
+}
+
+/** Map nhãn Excel → field key; không khớp trả null. */
+export function resolveExcelColumnKey(label: unknown): string | null {
+  const raw = normalizeHeaderLabel(label);
+  if (!raw) return null;
+  if (raw in EXCEL_COLUMN_MAP) return EXCEL_COLUMN_MAP[raw];
+  // Thử khớp không phân biệt hoa thường
+  const lower = raw.toLowerCase();
+  for (const [k, v] of Object.entries(EXCEL_COLUMN_MAP)) {
+    if (k.toLowerCase() === lower) return v;
+  }
+  return null;
+}
 
 export const DOCUMENT_KEYS = new Set([
   "anh",
