@@ -68,10 +68,13 @@ function resolveCredentials(): ServiceAccountFields {
   );
 }
 
+let resolvedProjectId: string | null = null;
+
 function getAdminApp(): App {
   if (getApps().length) return getApps()[0]!;
 
   const creds = resolveCredentials();
+  resolvedProjectId = creds.projectId;
   return initializeApp({
     credential: cert({
       projectId: creds.projectId,
@@ -82,6 +85,14 @@ function getAdminApp(): App {
 }
 
 let firestoreReady = false;
+
+/** Project ID mà Admin SDK đang dùng (để đối chiếu với Firebase Console). */
+export function getAdminProjectId(): string {
+  if (resolvedProjectId) return resolvedProjectId;
+  const creds = resolveCredentials();
+  resolvedProjectId = creds.projectId;
+  return creds.projectId;
+}
 
 export function getDb(): Firestore {
   const db = getFirestore(getAdminApp());

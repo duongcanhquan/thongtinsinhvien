@@ -3,7 +3,7 @@ import { getClientIp, rateLimit } from "@/lib/rate-limit";
 import {
   findStudentsByQuery,
   isQuotaExceededError,
-  quotaExceededMessage,
+  quotaErrorPayload,
   toIdentity,
 } from "@/lib/students-repo";
 
@@ -30,10 +30,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ matches: matches.map(toIdentity) });
   } catch (e) {
     if (isQuotaExceededError(e)) {
-      return NextResponse.json(
-        { error: quotaExceededMessage() },
-        { status: 503 }
-      );
+      return NextResponse.json(quotaErrorPayload(e), { status: 503 });
     }
     const message = e instanceof Error ? e.message : "Lỗi máy chủ";
     return NextResponse.json({ error: message }, { status: 500 });

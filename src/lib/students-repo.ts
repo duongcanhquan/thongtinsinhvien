@@ -1,4 +1,4 @@
-import { getDb } from "@/lib/firebase-admin";
+import { getAdminProjectId, getDb } from "@/lib/firebase-admin";
 import {
   ADMIN_EDITABLE_FIELDS,
   DOCUMENT_KEYS,
@@ -12,10 +12,12 @@ import {
   normalizeText,
 } from "@/lib/student-fields";
 import {
+  firestoreErrorDetail,
   getCachedStudents,
   invalidateStudentCache,
   isQuotaExceededError,
   quotaExceededMessage,
+  withFirestoreRetry,
 } from "@/lib/student-cache";
 import type {
   ChangeRequest,
@@ -25,11 +27,20 @@ import type {
 } from "@/lib/types";
 
 export {
+  firestoreErrorDetail,
   getCachedStudents,
   invalidateStudentCache,
   isQuotaExceededError,
   quotaExceededMessage,
 };
+
+export function quotaErrorPayload(error: unknown) {
+  return {
+    error: quotaExceededMessage(),
+    detail: firestoreErrorDetail(error),
+    projectId: getAdminProjectId(),
+  };
+}
 
 function emptyDocuments(): Record<string, DocumentSlot> {
   const docs: Record<string, DocumentSlot> = {};
@@ -244,7 +255,9 @@ export async function findStudentsByQuery(
 
   // 1) Tra cứu đúng mã SV (1 read)
   if (idQ.length >= 3) {
-    const byId = await db.collection("students").doc(normalizeText(query)).get();
+    const byId = await withFirestoreRetry(() =>
+      db.collection("students").doc(normalizeText(query)).get()
+    );
     if (byId.exists) {
       pushDoc(byId.id, byId.data() as Student);
       if (matches.length >= limit) return matches;
@@ -253,11 +266,13 @@ export async function findStudentsByQuery(
 
   const runEquals = async (field: string, value: string) => {
     if (!value || matches.length >= limit) return;
-    const snap = await db
-      .collection("students")
-      .where(field, "==", value)
-      .limit(limit)
-      .get();
+    const snap = await withFirestoreRetry(() =>
+      db
+        .collection("students")
+        .where(field, "==", value)
+        .limit(limit)
+        .get()
+    );
     for (const doc of snap.docs) {
       pushDoc(doc.id, doc.data() as Student);
     }
@@ -341,7 +356,9 @@ export async function findStudentsByQuery(
 
 export async function getStudent(maSinhVien: string): Promise<Student | null> {
   const db = getDb();
-  const doc = await db.collection("students").doc(maSinhVien).get();
+  const doc = await withFirestoreRetry(() =>
+    db.collection("students").doc(maSinhVien).get()
+  );
   if (!doc.exists) return null;
   return { ...(doc.data() as Student), maSinhVien: doc.id };
 }

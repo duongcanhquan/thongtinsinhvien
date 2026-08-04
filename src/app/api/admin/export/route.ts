@@ -12,7 +12,7 @@ import {
 import {
   isQuotaExceededError,
   listStudents,
-  quotaExceededMessage,
+  quotaErrorPayload,
 } from "@/lib/students-repo";
 import type { Student } from "@/lib/types";
 
@@ -116,10 +116,7 @@ export async function GET() {
     });
   } catch (e) {
     if (isQuotaExceededError(e)) {
-      return NextResponse.json(
-        { error: quotaExceededMessage() },
-        { status: 503 }
-      );
+      return NextResponse.json(quotaErrorPayload(e), { status: 503 });
     }
     const message = e instanceof Error ? e.message : "Lỗi máy chủ";
     return NextResponse.json({ error: message }, { status: 500 });

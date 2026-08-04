@@ -83,9 +83,19 @@ export default function HomePage() {
       if (id !== reqIdRef.current) return;
       if (!res.ok) {
         if (res.status === 429 || res.status === 503) {
+          const detail =
+            typeof data.detail === "string" && data.detail
+              ? ` (${data.detail})`
+              : "";
+          const project =
+            typeof data.projectId === "string" && data.projectId
+              ? ` [project: ${data.projectId}]`
+              : "";
           throw new Error(
-            data.error ||
-              "Hệ thống đang bận. Vui lòng chờ một chút rồi thử lại."
+            (data.error ||
+              "Hệ thống đang bận. Vui lòng chờ một chút rồi thử lại.") +
+              detail +
+              project
           );
         }
         throw new Error(data.error || "Tìm kiếm thất bại");

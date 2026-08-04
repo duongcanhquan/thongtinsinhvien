@@ -31,7 +31,36 @@ export function isQuotaExceededError(e: unknown): boolean {
 }
 
 export function quotaExceededMessage() {
-  return "Firestore đã hết hạn mức miễn phí trong ngày (đọc/ghi). Thử lại sau khi quota reset (khoảng 0h giờ Mỹ ≈ 14–15h VN) hoặc bật Blaze/Billing trên Firebase Console.";
+  return [
+    "Firestore vẫn từ chối truy cập (RESOURCE_EXHAUSTED) dù đã nâng Blaze.",
+    "Kiểm tra nhanh:",
+    "1) Google Cloud Console → App Engine → Application settings → bỏ/nâng Daily spending limit (hay bị kẹt $0).",
+    "2) Firebase đúng project đang gắn billing Active (không phải project khác).",
+    "3) Đợi 5–15 phút sau khi bật Blaze rồi hard-refresh trang.",
+  ].join(" ");
+}
+
+export function firestoreErrorDetail(e: unknown): string {
+  if (e instanceof Error) return e.message.slice(0, 300);
+  return String(e ?? "").slice(0, 300);
+}
+
+/** Retry ngắn — sau khi bật Blaze, Google đôi khi còn trả quota lỗi tạm thời. */
+export async function withFirestoreRetry<T>(
+  fn: () => Promise<T>,
+  attempts = 3
+): Promise<T> {
+  let last: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      last = e;
+      if (!isQuotaExceededError(e) || i === attempts - 1) throw e;
+      await new Promise((r) => setTimeout(r, 400 * 2 ** i));
+    }
+  }
+  throw last;
 }
 
 /** Full student list cached in-memory per serverless instance. */
@@ -44,7 +73,7 @@ export async function getCachedStudents(force = false): Promise<Student[]> {
 
   inflight = (async () => {
     const db = getDb();
-    const snap = await db.collection("students").get();
+    const snap = await withFirestoreRetry(() => db.collection("students").get());
     const students = snap.docs.map((d) => ({
       ...(d.data() as Student),
       maSinhVien: d.id,

@@ -13,7 +13,7 @@ import {
   getCachedStudents,
   isQuotaExceededError,
   mergeStudentFromImport,
-  quotaExceededMessage,
+  quotaErrorPayload,
   studentFromFields,
   upsertStudentsBatch,
 } from "@/lib/students-repo";
@@ -132,10 +132,7 @@ export async function POST(req: Request) {
     });
   } catch (e) {
     if (isQuotaExceededError(e)) {
-      return NextResponse.json(
-        { error: quotaExceededMessage() },
-        { status: 503 }
-      );
+      return NextResponse.json(quotaErrorPayload(e), { status: 503 });
     }
     return NextResponse.json({ error: firestoreUserMessage(e) }, { status: 500 });
   }
