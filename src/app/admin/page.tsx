@@ -572,7 +572,7 @@ export default function AdminPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Import thất bại");
       setImportResult(
-        `Thêm mới: ${data.added}. Bỏ qua (đã có): ${data.skipped}. Cập nhật link ảnh: ${data.linksUpdated || 0}. Lỗi: ${(data.errors || []).length}`
+        `Thêm mới: ${data.added}. Cập nhật (trùng mã): ${data.updated ?? 0}. Lỗi: ${(data.errors || []).length}`
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Lỗi");
@@ -1187,9 +1187,9 @@ export default function AdminPage() {
               Import Excel
             </h2>
             <p className="mt-2 text-sm text-foreground/65">
-              Đọc từ dòng 3. Mã sinh viên đã có sẽ được bỏ qua (không ghi đè
-              thông tin), nhưng <strong>link Drive cột ẢNH</strong> vẫn được
-              cập nhật nếu Excel có hyperlink.
+              Đọc từ dòng 3. <strong>Trùng mã SV → cập nhật</strong> thông tin từ
+              file mới; mã chưa có → thêm mới. File đã upload trên hệ thống được
+              giữ; link Drive / trạng thái giấy tờ theo Excel.
             </p>
             <label className="mt-5 inline-flex min-h-12 cursor-pointer items-center gap-2 rounded-xl border-2 border-dashed border-primary/30 bg-muted/50 px-5 text-sm font-bold text-primary transition hover:border-primary hover:bg-muted">
               <FileArrowUp size={18} weight="bold" />

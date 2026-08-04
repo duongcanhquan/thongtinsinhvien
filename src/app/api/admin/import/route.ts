@@ -9,7 +9,7 @@ import {
 } from "@/lib/student-fields";
 import {
   getStudent,
-  studentExists,
+  mergeStudentFromImport,
   studentFromFields,
   upsertStudent,
 } from "@/lib/students-repo";
@@ -57,8 +57,7 @@ export async function POST(req: Request) {
     });
 
     let added = 0;
-    let skipped = 0;
-    let linksUpdated = 0;
+    let updated = 0;
     const errors: string[] = [];
 
     for (let r = 2; r < rows.length; r++) {
@@ -76,62 +75,35 @@ export async function POST(req: Request) {
         if (href) externalUrls[key] = href;
       });
 
-      const student = studentFromFields(fields, externalUrls);
-      if (!student) {
+      const incoming = studentFromFields(fields, externalUrls);
+      if (!incoming) {
         errors.push(`Dòng ${r + 1}: thiếu mã sinh viên`);
         continue;
       }
 
-      if (await studentExists(student.maSinhVien)) {
-        skipped += 1;
-        // Cập nhật link Drive cho mọi cột giấy tờ có hyperlink (không ghi đè field khác)
-        const existing = await getStudent(student.maSinhVien);
-        if (existing) {
-          let changed = false;
-          const nextDocs = { ...(existing.documents || {}) };
-          for (const key of DOCUMENT_KEYS) {
-            const incoming = student.documents?.[key];
-            const photoUrl = extractHttpUrl(incoming?.externalUrl);
-            if (!photoUrl) continue;
-            const prev = nextDocs[key] || {
-              status: "thieu" as const,
-              files: [],
-            };
-            if (prev.externalUrl === photoUrl) continue;
-            const note =
-              cellToString(incoming?.note) || cellToString(prev.note);
-            nextDocs[key] = {
-              ...prev,
-              status: prev.status === "thieu" ? "du" : prev.status,
-              externalUrl: photoUrl,
-              ...(note ? { note } : {}),
-              files: prev.files || [],
-            };
-            changed = true;
-          }
-          if (changed) {
-            existing.documents = nextDocs;
-            existing.updatedAt = new Date().toISOString();
-            await upsertStudent(existing);
-            linksUpdated += 1;
-          }
-        }
+      const existing = await getStudent(incoming.maSinhVien);
+      const now = new Date().toISOString();
+
+      if (existing) {
+        const merged = mergeStudentFromImport(existing, incoming);
+        await upsertStudent(merged);
+        updated += 1;
         continue;
       }
 
-      const now = new Date().toISOString();
-      student.importedAt = now;
-      student.createdAt = now;
-      student.updatedAt = now;
-      await upsertStudent(student);
+      incoming.importedAt = now;
+      incoming.createdAt = now;
+      incoming.updatedAt = now;
+      await upsertStudent(incoming);
       added += 1;
     }
 
     return NextResponse.json({
       ok: true,
       added,
-      skipped,
-      linksUpdated,
+      updated,
+      skipped: 0,
+      linksUpdated: 0,
       errors,
     });
   } catch (e) {

@@ -98,6 +98,52 @@ export function studentFromFields(
   return stripUndefined(student as Student);
 }
 
+/**
+ * Ghi đè thông tin từ bản Excel lên hồ sơ đã có.
+ * Giữ: createdAt, file R2 đã upload. Cập nhật: field, trạng thái giấy tờ, note, link Drive.
+ */
+export function mergeStudentFromImport(
+  existing: Student,
+  incoming: Student
+): Student {
+  const now = new Date().toISOString();
+  const next: Student = {
+    ...existing,
+    ...incoming,
+    maSinhVien: existing.maSinhVien,
+    createdAt: existing.createdAt || incoming.createdAt || now,
+    importedAt: now,
+    updatedAt: now,
+    documents: emptyDocuments(),
+  };
+
+  const prevDocs = existing.documents || {};
+  const inDocs = incoming.documents || {};
+  for (const key of DOCUMENT_KEYS) {
+    const prev = prevDocs[key] || { status: "thieu" as const, files: [] };
+    const inc = inDocs[key] || { status: "thieu" as const, files: [] };
+    const slot: DocumentSlot = {
+      status: inc.status || prev.status || "thieu",
+      files: prev.files?.length ? prev.files : [],
+    };
+    const note = cellToString(inc.note) || cellToString(prev.note);
+    if (note) slot.note = note;
+    const url =
+      extractHttpUrl(inc.externalUrl) || extractHttpUrl(prev.externalUrl);
+    if (url) slot.externalUrl = url;
+    // Có file R2 hoặc link Drive mà Excel để trống status → không hạ xuống thiếu oan
+    if (
+      slot.status === "thieu" &&
+      ((slot.files && slot.files.length > 0) || slot.externalUrl)
+    ) {
+      slot.status = slot.files?.length ? "co_file" : "du";
+    }
+    next.documents[key] = slot;
+  }
+
+  return stripUndefined(next);
+}
+
 export function toIdentity(student: Student): StudentIdentity {
   return {
     maSinhVien: student.maSinhVien,
