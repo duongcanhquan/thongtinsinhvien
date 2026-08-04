@@ -10,8 +10,8 @@ import {
   extractHttpUrl,
 } from "@/lib/student-fields";
 import {
+  getCachedStudents,
   isQuotaExceededError,
-  listStudents,
   quotaErrorPayload,
 } from "@/lib/students-repo";
 import type { Student } from "@/lib/types";
@@ -37,7 +37,8 @@ export async function GET() {
       return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
     }
 
-    const students = await listStudents(5000);
+    // Full documents — chỉ admin export mới đọc cả collection (có cache 60')
+    const students = await getCachedStudents();
     students.sort((a, b) => {
       const sa = Number(a.stt);
       const sb = Number(b.stt);

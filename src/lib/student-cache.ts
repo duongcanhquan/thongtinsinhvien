@@ -1,7 +1,7 @@
 import { getDb } from "@/lib/firebase-admin";
 import type { Student } from "@/lib/types";
 
-const TTL_MS = 10 * 60 * 1000; // 10 phút / instance — tránh full scan mỗi lần gõ
+const TTL_MS = 60 * 60 * 1000; // 60 phút — chỉ dùng cho export / backfill full
 
 type CacheState = {
   loadedAt: number;

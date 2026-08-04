@@ -19,6 +19,13 @@ import {
   quotaExceededMessage,
   withFirestoreRetry,
 } from "@/lib/student-cache";
+import {
+  entryToStudentStub,
+  getDirectoryEntries,
+  rebuildStudentDirectory,
+  searchDirectory,
+  upsertDirectoryEntry,
+} from "@/lib/student-directory";
 import type {
   ChangeRequest,
   DocumentSlot,
@@ -32,6 +39,7 @@ export {
   invalidateStudentCache,
   isQuotaExceededError,
   quotaExceededMessage,
+  rebuildStudentDirectory,
 };
 
 export function quotaErrorPayload(error: unknown) {
@@ -225,39 +233,9 @@ export function firestoreUserMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Lỗi máy chủ";
 }
 
-/** Bỏ dấu tiếng Việt để tìm "ngoc anh" vẫn ra "NGỌC ANH". */
-function foldDiacritics(value: string): string {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/đ/g, "d")
-    .replace(/Đ/g, "d");
-}
-
-function nameMatchesQuery(hoVaTen: string, nameQ: string): boolean {
-  if (nameQ.length < 2) return false;
-  const name = normalizeName(hoVaTen);
-  if (!name) return false;
-  if (name.includes(nameQ)) return true;
-
-  const foldedName = foldDiacritics(name);
-  const foldedQ = foldDiacritics(nameQ);
-  if (foldedName.includes(foldedQ)) return true;
-
-  // Nhiều từ: mỗi từ phải có trong tên (vd. "Ngọc Anh" ⊂ "Bùi Thị Ngọc Anh")
-  const tokens = nameQ.split(/\s+/).filter((t) => t.length >= 2);
-  if (tokens.length > 1) {
-    return tokens.every(
-      (t) => name.includes(t) || foldedName.includes(foldDiacritics(t))
-    );
-  }
-  return false;
-}
-
 /**
- * Tìm SV bằng query có chỉ mục — KHÔNG đọc toàn bộ collection.
- * Hỗ trợ: mã SV, SĐT, email, CCCD (khớp), tên (token / tiền tố).
- * Fallback cache in-memory: khớp giữa tên / không dấu (tránh miss "Ngọc Anh").
+ * Tìm SV qua meta/studentDirectory (1 read / TTL) — không quét collection.
+ * Trả stub đủ 4 định danh; hồ sơ đầy đủ chỉ load khi verify/me.
  */
 export async function findStudentsByQuery(
   query: string,
@@ -266,162 +244,22 @@ export async function findStudentsByQuery(
   const q = normalizeText(query);
   if (!q) return [];
 
-  const db = getDb();
-  const phoneQ = normalizePhone(q);
-  const emailQ = normalizeEmail(q);
-  const cccdQ = normalizeCccd(q);
-  const nameQ = normalizeName(q);
-  const idQ = normalizeText(q).toLowerCase();
-  const nameUpper = normalizeText(q).toLocaleUpperCase("vi-VN");
-
-  const seen = new Set<string>();
-  const matches: Student[] = [];
-
-  const pushDoc = (id: string, data: Student) => {
-    if (seen.has(id) || matches.length >= limit) return;
-    seen.add(id);
-    matches.push({ ...data, maSinhVien: data.maSinhVien || id });
-  };
-
-  // 1) Tra cứu đúng mã SV (1 read)
+  // Mã SV đúng → 1 doc read (đủ cho confirm nhanh)
+  const idQ = normalizeText(q);
   if (/^\d{8,}$/.test(idQ)) {
-    const byId = await withFirestoreRetry(() =>
-      db.collection("students").doc(normalizeText(query)).get()
-    );
-    if (byId.exists) {
-      pushDoc(byId.id, byId.data() as Student);
-      if (matches.length >= limit) return matches;
-    }
+    const exact = await getStudent(idQ);
+    if (exact) return [exact];
   }
 
-  const runEquals = async (field: string, value: string) => {
-    if (!value || matches.length >= limit) return;
-    const snap = await withFirestoreRetry(() =>
-      db
-        .collection("students")
-        .where(field, "==", value)
-        .limit(limit)
-        .get()
-    );
-    for (const doc of snap.docs) {
-      pushDoc(doc.id, doc.data() as Student);
-    }
-  };
-
-  // 2) Khớp chính xác các trường phổ biến (đã có sẵn trên document)
-  if (phoneQ.length >= 9) {
-    await runEquals("soDienThoai", phoneQ);
-    await runEquals("soDienThoaiDigits", phoneQ);
-  }
-  if (emailQ.includes("@") && emailQ.length >= 5) {
-    await runEquals("emailCaNhan", emailQ);
-    await runEquals("emailCaNhanLower", emailQ);
-  }
-  if (cccdQ.length >= 9) {
-    await runEquals("canCuoc", cccdQ);
-    await runEquals("canCuocDigits", cccdQ);
-  }
-  if (matches.length >= limit) return matches;
-
-  // 3) Token tên / mã (cần searchTokens — có sau khi lưu/import lại)
-  const tokens = nameQ
-    .split(/\s+/)
-    .map((t) => t.trim())
-    .filter((t) => t.length >= 2)
-    .slice(0, 10);
-  if (tokens.length) {
-    try {
-      const snap = await db
-        .collection("students")
-        .where("searchTokens", "array-contains-any", tokens)
-        .limit(Math.max(limit * 3, 24))
-        .get();
-      for (const doc of snap.docs) {
-        const data = doc.data() as Student;
-        // Nhiều từ → bắt buộc đủ token trong tên (tránh OR quá rộng)
-        if (tokens.length > 1 && !nameMatchesQuery(data.hoVaTen || "", nameQ)) {
-          continue;
-        }
-        pushDoc(doc.id, data);
-      }
-    } catch {
-      // Index chưa sẵn / field chưa có — bỏ qua, thử prefix bên dưới
-    }
-  }
-  if (matches.length >= limit) return matches;
-
-  // 4) Prefix họ tên (dữ liệu thường viết HOA)
-  if (nameUpper.length >= 2) {
-    try {
-      const snap = await db
-        .collection("students")
-        .where("hoVaTen", ">=", nameUpper)
-        .where("hoVaTen", "<=", nameUpper + "\uf8ff")
-        .limit(limit)
-        .get();
-      for (const doc of snap.docs) {
-        pushDoc(doc.id, doc.data() as Student);
-      }
-    } catch {
-      // Có thể cần composite index — bỏ qua
-    }
-  }
-
-  if (matches.length >= limit) return matches;
-
-  // 5) Prefix trên hoVaTenLower (sau khi đã backfill)
-  if (nameQ.length >= 2) {
-    try {
-      const snap = await db
-        .collection("students")
-        .where("hoVaTenLower", ">=", nameQ)
-        .where("hoVaTenLower", "<=", nameQ + "\uf8ff")
-        .limit(limit)
-        .get();
-      for (const doc of snap.docs) {
-        pushDoc(doc.id, doc.data() as Student);
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  if (matches.length >= limit) return matches;
-
-  // 6) Fallback cache: khớp giữa tên / không dấu — 1 lần đọc collection / TTL
-  //    Sửa case "Ngọc Anh", "anh", "ngoc" vốn không phải tiền tố họ tên.
-  try {
-    const all = await getCachedStudents();
-    for (const data of all) {
-      if (matches.length >= limit) break;
-      const id = data.maSinhVien;
-      if (seen.has(id)) continue;
-
-      const phone = normalizePhone(data.soDienThoai);
-      const email = normalizeEmail(data.emailCaNhan);
-      const cccd = normalizeCccd(data.canCuoc);
-      const ma = normalizeText(data.maSinhVien).toLowerCase();
-
-      const hit =
-        nameMatchesQuery(data.hoVaTen || "", nameQ) ||
-        (phoneQ.length >= 3 && phone.includes(phoneQ)) ||
-        (cccdQ.length >= 3 && cccd.includes(cccdQ)) ||
-        (emailQ.length >= 3 && email.includes(emailQ)) ||
-        (idQ.length >= 3 && ma.includes(idQ));
-
-      if (hit) pushDoc(id, data);
-    }
-  } catch {
-    // Quota / cache fail — trả những gì indexed đã tìm được
-  }
-
-  return matches;
+  const entries = await searchDirectory(q, limit);
+  return entries.map(entryToStudentStub);
 }
 
-/** Backfill searchTokens / hoVaTenLower cho toàn bộ hồ sơ (admin). */
+/** Backfill searchTokens + rebuild danh bạ 1-doc. */
 export async function backfillSearchMeta(): Promise<{
   total: number;
   updated: number;
+  directoryCount: number;
 }> {
   const all = await getCachedStudents(true);
   const db = getDb();
@@ -443,8 +281,9 @@ export async function backfillSearchMeta(): Promise<{
     await batch.commit();
   }
 
+  const dir = await rebuildStudentDirectory(all);
   invalidateStudentCache();
-  return { total: all.length, updated };
+  return { total: all.length, updated, directoryCount: dir.count };
 }
 
 export async function getStudent(maSinhVien: string): Promise<Student | null> {
@@ -473,6 +312,11 @@ export async function upsertStudent(student: Student) {
     merge: true,
   });
   invalidateStudentCache();
+  try {
+    await upsertDirectoryEntry(student);
+  } catch {
+    // Directory update best-effort; search vẫn có thể rebuild sau
+  }
 }
 
 /** Ghi nhiều SV trong batch (tối đa 400 / lần) để giảm round-trip & đỡ cháy quota. */
@@ -502,6 +346,12 @@ export async function upsertStudentsBatch(students: Student[]) {
     await batch.commit();
   }
   invalidateStudentCache();
+  // Rebuild directory 1 lần sau import — tránh N lần read-modify-write
+  try {
+    await rebuildStudentDirectory();
+  } catch {
+    // best-effort
+  }
 }
 
 export async function studentExists(maSinhVien: string) {
@@ -541,10 +391,10 @@ export async function listPendingRequests(): Promise<ChangeRequest[]> {
   return snap.docs.map((d) => d.data() as ChangeRequest);
 }
 
+/** Danh sách nhẹ từ directory (1 read) — đủ cho bảng admin. */
 export async function listStudents(limit = 200): Promise<Student[]> {
-  // Prefer cache so admin list / export do not re-scan when warm
-  const all = await getCachedStudents();
-  return all.slice(0, limit);
+  const entries = await getDirectoryEntries();
+  return entries.slice(0, limit).map(entryToStudentStub);
 }
 
 export async function searchStudentsAdmin(query: string): Promise<Student[]> {
