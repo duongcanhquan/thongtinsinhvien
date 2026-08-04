@@ -62,6 +62,22 @@ assert(
 assert(classifyDirectoryMatch(minh, "nguyen") === "name", "nguyen folded → name");
 assert(classifyDirectoryMatch(minh, "Nguyễn") === "name", "Nguyễn → name");
 
+const thanhTruc = entry({
+  maSinhVien: "x1",
+  hoVaTen: "ĐỖ THANH TRÚC",
+  emailCaNhan: "truc@gmail.com",
+});
+assert(
+  classifyDirectoryMatch(thanhTruc, "anh") === null,
+  "anh must NOT match THANH (substring trap)"
+);
+
+const vanAnh = entry({
+  maSinhVien: "x2",
+  hoVaTen: "LÊ THỊ VÂN ANH",
+});
+assert(classifyDirectoryMatch(vanAnh, "anh") === "name", "token ANH still matches");
+
 if (failed) {
   console.error(`\n${failed} assertion(s) failed`);
   process.exit(1);

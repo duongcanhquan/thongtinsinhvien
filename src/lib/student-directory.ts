@@ -85,17 +85,36 @@ export function entryToStudentStub(entry: DirectoryEntry): Student {
 
 function nameMatches(entry: DirectoryEntry, nameQ: string): boolean {
   if (nameQ.length < 2) return false;
-  if (entry.name.includes(nameQ)) return true;
   const foldedQ = foldDiacritics(nameQ);
-  if (foldedQ.length >= 2 && entry.nameFold.includes(foldedQ)) return true;
-  const tokens = nameQ.split(/\s+/).filter((t) => t.length >= 2);
-  if (tokens.length > 1) {
-    return tokens.every(
+  const nameTokens = entry.name.split(/\s+/).filter(Boolean);
+  const foldTokens = entry.nameFold.split(/\s+/).filter(Boolean);
+
+  const tokenHit = (tokens: string[], q: string) =>
+    q.length >= 2 && tokens.some((t) => t === q || t.startsWith(q));
+
+  const parts = nameQ.split(/\s+/).filter((t) => t.length >= 2);
+
+  // Nhiều từ: mỗi từ phải có trong tên (vd. Ngọc Anh ⊂ Bùi Thị Ngọc Anh)
+  if (parts.length > 1) {
+    return parts.every(
       (t) =>
-        entry.name.includes(t) || entry.nameFold.includes(foldDiacritics(t))
+        entry.name.includes(t) ||
+        entry.nameFold.includes(foldDiacritics(t))
     );
   }
-  return false;
+
+  // Một từ ngắn (≤3): chỉ khớp token/prefix — tránh "anh" ⊂ "thanh"
+  if (nameQ.length <= 3) {
+    return tokenHit(nameTokens, nameQ) || tokenHit(foldTokens, foldedQ);
+  }
+
+  // Một từ dài hơn: token/prefix hoặc substring
+  return (
+    tokenHit(nameTokens, nameQ) ||
+    tokenHit(foldTokens, foldedQ) ||
+    entry.name.includes(nameQ) ||
+    entry.nameFold.includes(foldedQ)
+  );
 }
 
 export type MatchKind = "name" | "phone" | "cccd" | "email" | "ma" | null;
