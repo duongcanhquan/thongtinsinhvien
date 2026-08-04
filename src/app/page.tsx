@@ -64,7 +64,7 @@ export default function HomePage() {
     setSuggestLoading(true);
     debounceRef.current = setTimeout(() => {
       void runSuggest(q);
-    }, 280);
+    }, 500);
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -81,7 +81,15 @@ export default function HomePage() {
       });
       const data = await res.json();
       if (id !== reqIdRef.current) return;
-      if (!res.ok) throw new Error(data.error || "Tìm kiếm thất bại");
+      if (!res.ok) {
+        if (res.status === 429 || res.status === 503) {
+          throw new Error(
+            data.error ||
+              "Hệ thống đang bận. Vui lòng chờ một chút rồi thử lại."
+          );
+        }
+        throw new Error(data.error || "Tìm kiếm thất bại");
+      }
       setSuggestions(data.matches || []);
       setOpenSuggest(true);
       setError("");

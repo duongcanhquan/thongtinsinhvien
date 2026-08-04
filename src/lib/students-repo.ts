@@ -11,12 +11,24 @@ import {
   normalizePhone,
   normalizeText,
 } from "@/lib/student-fields";
+import {
+  getCachedStudents,
+  invalidateStudentCache,
+  isQuotaExceededError,
+  quotaExceededMessage,
+} from "@/lib/student-cache";
 import type {
   ChangeRequest,
   DocumentSlot,
   Student,
   StudentIdentity,
 } from "@/lib/types";
+
+export {
+  invalidateStudentCache,
+  isQuotaExceededError,
+  quotaExceededMessage,
+};
 
 function emptyDocuments(): Record<string, DocumentSlot> {
   const docs: Record<string, DocumentSlot> = {};
@@ -99,12 +111,7 @@ export function studentFromFields(
   return stripUndefined(student as Student);
 }
 
-/**
- * Ghi đè thông tin từ bản Excel lên hồ sơ đã có.
- * - Mọi trường dữ liệu có trong file mới → lấy theo file mới
- * - Giữ: createdAt, file R2 đã upload trên hệ thống
- * - Cập nhật: trạng thái giấy tờ, note, link Drive từ Excel
- */
+/** Upsert from Excel: overwrite scalar fields, keep uploaded files + Drive links. */
 export function mergeStudentFromImport(
   existing: Student,
   incoming: Student
@@ -164,6 +171,32 @@ export function toIdentity(student: Student): StudentIdentity {
   };
 }
 
+function matchStudent(data: Student, docId: string, q: string): boolean {
+  const phoneQ = normalizePhone(q);
+  const emailQ = normalizeEmail(q);
+  const cccdQ = normalizeCccd(q);
+  const nameQ = normalizeName(q);
+  const idQ = normalizeText(q).toLowerCase();
+
+  const ma = normalizeText(data.maSinhVien || docId).toLowerCase();
+  const phone = normalizePhone(data.soDienThoai);
+  const email = normalizeEmail(data.emailCaNhan);
+  const cccd = normalizeCccd(data.canCuoc);
+  const name = normalizeName(data.hoVaTen);
+
+  return (
+    (nameQ.length >= 2 && name.includes(nameQ)) ||
+    (phoneQ.length >= 3 && phone.includes(phoneQ)) ||
+    (cccdQ.length >= 3 && cccd.includes(cccdQ)) ||
+    (emailQ.length >= 3 && email.includes(emailQ)) ||
+    (idQ.length >= 3 && ma.includes(idQ))
+  );
+}
+
+/**
+ * Search students. Uses in-memory cache to avoid a full Firestore collection
+ * read on every keystroke (was exhausting daily read quota).
+ */
 export async function findStudentsByQuery(
   query: string,
   limit = 8
@@ -171,32 +204,18 @@ export async function findStudentsByQuery(
   const q = normalizeText(query);
   if (!q) return [];
 
-  const db = getDb();
-  const snap = await db.collection("students").get();
-  const phoneQ = normalizePhone(q);
-  const emailQ = normalizeEmail(q);
-  const cccdQ = normalizeCccd(q);
-  const nameQ = normalizeName(q);
-  const idQ = normalizeText(q).toLowerCase();
+  // Fast path: exact mã SV → 1 document read, no collection scan
+  const maybeId = normalizeText(q);
+  if (/^\d{8,}$/.test(maybeId)) {
+    const exact = await getStudent(maybeId);
+    if (exact) return [exact];
+  }
 
+  const all = await getCachedStudents();
   const matches: Student[] = [];
-  for (const doc of snap.docs) {
-    const data = doc.data() as Student;
-    const ma = normalizeText(data.maSinhVien || doc.id).toLowerCase();
-    const phone = normalizePhone(data.soDienThoai);
-    const email = normalizeEmail(data.emailCaNhan);
-    const cccd = normalizeCccd(data.canCuoc);
-    const name = normalizeName(data.hoVaTen);
-
-    const hit =
-      (nameQ.length >= 2 && name.includes(nameQ)) ||
-      (phoneQ.length >= 3 && phone.includes(phoneQ)) ||
-      (cccdQ.length >= 3 && cccd.includes(cccdQ)) ||
-      (emailQ.length >= 3 && email.includes(emailQ)) ||
-      (idQ.length >= 3 && ma.includes(idQ));
-
-    if (hit) {
-      matches.push({ ...data, maSinhVien: data.maSinhVien || doc.id });
+  for (const data of all) {
+    if (matchStudent(data, data.maSinhVien, q)) {
+      matches.push(data);
       if (matches.length >= limit) break;
     }
   }
@@ -225,6 +244,7 @@ export async function upsertStudent(student: Student) {
   await db.collection("students").doc(student.maSinhVien).set(payload, {
     merge: true,
   });
+  invalidateStudentCache();
 }
 
 export async function studentExists(maSinhVien: string) {
@@ -265,12 +285,12 @@ export async function listPendingRequests(): Promise<ChangeRequest[]> {
 }
 
 export async function listStudents(limit = 200): Promise<Student[]> {
-  const db = getDb();
-  const snap = await db.collection("students").limit(limit).get();
-  return snap.docs.map((d) => ({ ...(d.data() as Student), maSinhVien: d.id }));
+  // Prefer cache so admin list / export do not re-scan when warm
+  const all = await getCachedStudents();
+  return all.slice(0, limit);
 }
 
 export async function searchStudentsAdmin(query: string): Promise<Student[]> {
-  if (!query.trim()) return listStudents();
-  return findStudentsByQuery(query);
+  if (!query.trim()) return listStudents(5000);
+  return findStudentsByQuery(query, 100);
 }

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getClientIp, rateLimit } from "@/lib/rate-limit";
 import { createStudentSession } from "@/lib/session";
-import { getStudent, toIdentity } from "@/lib/students-repo";
+import { getStudent, isQuotaExceededError, quotaExceededMessage, toIdentity } from "@/lib/students-repo";
 import {
   normalizeCccd,
   normalizeEmail,
@@ -54,6 +54,12 @@ export async function POST(req: Request) {
     await createStudentSession(student.maSinhVien);
     return NextResponse.json({ ok: true, maSinhVien: student.maSinhVien });
   } catch (e) {
+    if (isQuotaExceededError(e)) {
+      return NextResponse.json(
+        { error: quotaExceededMessage() },
+        { status: 503 }
+      );
+    }
     const message = e instanceof Error ? e.message : "Lỗi máy chủ";
     return NextResponse.json({ error: message }, { status: 500 });
   }
