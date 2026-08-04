@@ -314,8 +314,10 @@ export async function upsertStudent(student: Student) {
   invalidateStudentCache();
   try {
     await upsertDirectoryEntry(student);
-  } catch {
-    // Directory update best-effort; search vẫn có thể rebuild sau
+  } catch (e) {
+    // Không nuốt lỗi im lặng — thử rebuild để search không lệch identity
+    console.error("upsertDirectoryEntry failed, rebuilding directory", e);
+    await rebuildStudentDirectory();
   }
 }
 
@@ -349,8 +351,9 @@ export async function upsertStudentsBatch(students: Student[]) {
   // Rebuild directory 1 lần sau import — tránh N lần read-modify-write
   try {
     await rebuildStudentDirectory();
-  } catch {
-    // best-effort
+  } catch (e) {
+    console.error("rebuildStudentDirectory after batch failed", e);
+    throw e;
   }
 }
 
