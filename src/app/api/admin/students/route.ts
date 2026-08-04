@@ -6,6 +6,7 @@ import {
 import { getAdminSession } from "@/lib/session";
 import {
   emptyDocuments,
+  firestoreUserMessage,
   searchStudentsAdmin,
   studentExists,
   upsertStudent,
@@ -22,8 +23,7 @@ export async function GET(req: Request) {
     const students = await searchStudentsAdmin(q);
     return NextResponse.json({ students });
   } catch (e) {
-    const message = e instanceof Error ? e.message : "Lỗi máy chủ";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: firestoreUserMessage(e) }, { status: 500 });
   }
 }
 
@@ -117,7 +117,6 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true, student }, { status: 201 });
   } catch (e) {
-    const message = e instanceof Error ? e.message : "Lỗi máy chủ";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: firestoreUserMessage(e) }, { status: 500 });
   }
 }

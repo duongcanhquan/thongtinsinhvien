@@ -9,7 +9,11 @@ import {
   documentSlotToExcel,
   extractHttpUrl,
 } from "@/lib/student-fields";
-import { listStudents, isQuotaExceededError, quotaExceededMessage } from "@/lib/students-repo";
+import {
+  isQuotaExceededError,
+  listStudents,
+  quotaExceededMessage,
+} from "@/lib/students-repo";
 import type { Student } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -33,7 +37,7 @@ export async function GET() {
       return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
     }
 
-    const students = await listStudents(20000);
+    const students = await listStudents(5000);
     students.sort((a, b) => {
       const sa = Number(a.stt);
       const sb = Number(b.stt);

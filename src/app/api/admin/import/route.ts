@@ -9,11 +9,15 @@ import {
   resolveExcelColumnKey,
 } from "@/lib/student-fields";
 import {
-  getStudent,
+  firestoreUserMessage,
+  getCachedStudents,
+  isQuotaExceededError,
   mergeStudentFromImport,
+  quotaExceededMessage,
   studentFromFields,
-  upsertStudent,
+  upsertStudentsBatch,
 } from "@/lib/students-repo";
+import type { Student } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -58,7 +62,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Tiêu đề ở dòng 1–2; dữ liệu từ dòng 3. Nếu không map được chữ → dùng thứ tự cột template K26.
     const colKeys = buildColumnKeys(rows);
     if (!colKeys.includes("maSinhVien")) {
       return NextResponse.json(
@@ -73,6 +76,12 @@ export async function POST(req: Request) {
     let added = 0;
     let updated = 0;
     const errors: string[] = [];
+    const toWrite: Student[] = [];
+
+    // 1 lần đọc (hoặc cache) thay vì getStudent từng dòng — tránh đốt read quota
+    const existingById = new Map(
+      (await getCachedStudents()).map((s) => [s.maSinhVien, s])
+    );
 
     for (let r = DATA_START_ROW; r < rows.length; r++) {
       const row = rows[r];
@@ -95,22 +104,23 @@ export async function POST(req: Request) {
         continue;
       }
 
-      const existing = await getStudent(incoming.maSinhVien);
+      const existing = existingById.get(incoming.maSinhVien);
       const now = new Date().toISOString();
 
       if (existing) {
-        const merged = mergeStudentFromImport(existing, incoming);
-        await upsertStudent(merged);
+        toWrite.push(mergeStudentFromImport(existing, incoming));
         updated += 1;
-        continue;
+      } else {
+        incoming.importedAt = now;
+        incoming.createdAt = now;
+        incoming.updatedAt = now;
+        toWrite.push(incoming);
+        added += 1;
       }
-
-      incoming.importedAt = now;
-      incoming.createdAt = now;
-      incoming.updatedAt = now;
-      await upsertStudent(incoming);
-      added += 1;
     }
+
+    // Ghi batch để giảm số round-trip / đỡ cháy write quota
+    await upsertStudentsBatch(toWrite);
 
     return NextResponse.json({
       ok: true,
@@ -121,15 +131,16 @@ export async function POST(req: Request) {
       errors,
     });
   } catch (e) {
-    const message = e instanceof Error ? e.message : "Lỗi máy chủ";
-    return NextResponse.json({ error: message }, { status: 500 });
+    if (isQuotaExceededError(e)) {
+      return NextResponse.json(
+        { error: quotaExceededMessage() },
+        { status: 503 }
+      );
+    }
+    return NextResponse.json({ error: firestoreUserMessage(e) }, { status: 500 });
   }
 }
 
-/**
- * Map cột theo tiêu đề (ưu tiên dòng 2 tiếng Việt).
- * Nếu không đủ cột nhận diện → fallback đúng thứ tự template K26 (EXCEL_EXPORT_LAYOUT).
- */
 function buildColumnKeys(
   rows: (string | number | Date | null)[][]
 ): (string | null)[] {
@@ -142,14 +153,12 @@ function buildColumnKeys(
     return mapped;
   }
 
-  // Fallback: thứ tự cột cố định như file SINH VIÊN K26
   return EXCEL_EXPORT_LAYOUT.map((c) => c.key);
 }
 
 function pickHeaderRow(
   rows: (string | number | Date | null)[][]
 ): (string | number | Date | null)[] {
-  // Ưu tiên dòng 2 (index 1) — tiếng Việt
   const candidates = [rows[1], rows[0], rows[2]].filter(Boolean) as (
     | (string | number | Date | null)[]
   )[];
@@ -166,7 +175,6 @@ function pickHeaderRow(
   return best;
 }
 
-/** Đọc hyperlink Excel (vd. Drive) tại dòng/cột 0-based. */
 function cellHyperlink(
   sheet: XLSX.WorkSheet,
   rowIndex: number,

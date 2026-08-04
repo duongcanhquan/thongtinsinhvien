@@ -25,6 +25,7 @@ import type {
 } from "@/lib/types";
 
 export {
+  getCachedStudents,
   invalidateStudentCache,
   isQuotaExceededError,
   quotaExceededMessage,
@@ -111,7 +112,12 @@ export function studentFromFields(
   return stripUndefined(student as Student);
 }
 
-/** Upsert from Excel: overwrite scalar fields, keep uploaded files + Drive links. */
+/**
+ * Ghi đè thông tin từ bản Excel lên hồ sơ đã có.
+ * - Mọi trường dữ liệu có trong file mới → lấy theo file mới
+ * - Giữ: createdAt, file R2 đã upload trên hệ thống
+ * - Cập nhật: trạng thái giấy tờ, note, link Drive từ Excel
+ */
 export function mergeStudentFromImport(
   existing: Student,
   incoming: Student
@@ -171,31 +177,46 @@ export function toIdentity(student: Student): StudentIdentity {
   };
 }
 
-function matchStudent(data: Student, docId: string, q: string): boolean {
-  const phoneQ = normalizePhone(q);
-  const emailQ = normalizeEmail(q);
-  const cccdQ = normalizeCccd(q);
-  const nameQ = normalizeName(q);
-  const idQ = normalizeText(q).toLowerCase();
+/** Meta phục vụ tìm kiếm indexed — tránh quét cả collection (tốn quota). */
+function buildSearchMeta(student: Student) {
+  const name = normalizeName(student.hoVaTen);
+  const phone = normalizePhone(student.soDienThoai);
+  const email = normalizeEmail(student.emailCaNhan);
+  const cccd = normalizeCccd(student.canCuoc);
+  const ma = normalizeText(student.maSinhVien).toLowerCase();
+  const tokens = new Set<string>();
+  for (const part of name.split(/\s+/)) {
+    if (part.length >= 2) tokens.add(part);
+  }
+  if (name.length >= 2) tokens.add(name);
+  if (phone.length >= 3) tokens.add(phone);
+  if (email.length >= 3) tokens.add(email);
+  if (cccd.length >= 3) tokens.add(cccd);
+  if (ma.length >= 3) tokens.add(ma);
 
-  const ma = normalizeText(data.maSinhVien || docId).toLowerCase();
-  const phone = normalizePhone(data.soDienThoai);
-  const email = normalizeEmail(data.emailCaNhan);
-  const cccd = normalizeCccd(data.canCuoc);
-  const name = normalizeName(data.hoVaTen);
+  return {
+    hoVaTenLower: name,
+    soDienThoaiDigits: phone,
+    emailCaNhanLower: email,
+    canCuocDigits: cccd,
+    searchTokens: [...tokens].slice(0, 40),
+  };
+}
 
-  return (
-    (nameQ.length >= 2 && name.includes(nameQ)) ||
-    (phoneQ.length >= 3 && phone.includes(phoneQ)) ||
-    (cccdQ.length >= 3 && cccd.includes(cccdQ)) ||
-    (emailQ.length >= 3 && email.includes(emailQ)) ||
-    (idQ.length >= 3 && ma.includes(idQ))
-  );
+export function isFirestoreQuotaError(error: unknown): boolean {
+  return isQuotaExceededError(error);
+}
+
+export function firestoreUserMessage(error: unknown): string {
+  if (isQuotaExceededError(error)) {
+    return quotaExceededMessage();
+  }
+  return error instanceof Error ? error.message : "Lỗi máy chủ";
 }
 
 /**
- * Search students. Uses in-memory cache to avoid a full Firestore collection
- * read on every keystroke (was exhausting daily read quota).
+ * Tìm SV bằng query có chỉ mục — KHÔNG đọc toàn bộ collection.
+ * Hỗ trợ: mã SV, SĐT, email, CCCD (khớp), tên (token / tiền tố).
  */
 export async function findStudentsByQuery(
   query: string,
@@ -204,19 +225,114 @@ export async function findStudentsByQuery(
   const q = normalizeText(query);
   if (!q) return [];
 
-  // Fast path: exact mã SV → 1 document read, no collection scan
-  const maybeId = normalizeText(q);
-  if (/^\d{8,}$/.test(maybeId)) {
-    const exact = await getStudent(maybeId);
-    if (exact) return [exact];
+  const db = getDb();
+  const phoneQ = normalizePhone(q);
+  const emailQ = normalizeEmail(q);
+  const cccdQ = normalizeCccd(q);
+  const nameQ = normalizeName(q);
+  const idQ = normalizeText(q).toLowerCase();
+  const nameUpper = normalizeText(q).toLocaleUpperCase("vi-VN");
+
+  const seen = new Set<string>();
+  const matches: Student[] = [];
+
+  const pushDoc = (id: string, data: Student) => {
+    if (seen.has(id) || matches.length >= limit) return;
+    seen.add(id);
+    matches.push({ ...data, maSinhVien: data.maSinhVien || id });
+  };
+
+  // 1) Tra cứu đúng mã SV (1 read)
+  if (idQ.length >= 3) {
+    const byId = await db.collection("students").doc(normalizeText(query)).get();
+    if (byId.exists) {
+      pushDoc(byId.id, byId.data() as Student);
+      if (matches.length >= limit) return matches;
+    }
   }
 
-  const all = await getCachedStudents();
-  const matches: Student[] = [];
-  for (const data of all) {
-    if (matchStudent(data, data.maSinhVien, q)) {
-      matches.push(data);
-      if (matches.length >= limit) break;
+  const runEquals = async (field: string, value: string) => {
+    if (!value || matches.length >= limit) return;
+    const snap = await db
+      .collection("students")
+      .where(field, "==", value)
+      .limit(limit)
+      .get();
+    for (const doc of snap.docs) {
+      pushDoc(doc.id, doc.data() as Student);
+    }
+  };
+
+  // 2) Khớp chính xác các trường phổ biến (đã có sẵn trên document)
+  if (phoneQ.length >= 9) {
+    await runEquals("soDienThoai", phoneQ);
+    await runEquals("soDienThoaiDigits", phoneQ);
+  }
+  if (emailQ.includes("@") && emailQ.length >= 5) {
+    await runEquals("emailCaNhan", emailQ);
+    await runEquals("emailCaNhanLower", emailQ);
+  }
+  if (cccdQ.length >= 9) {
+    await runEquals("canCuoc", cccdQ);
+    await runEquals("canCuocDigits", cccdQ);
+  }
+  if (matches.length >= limit) return matches;
+
+  // 3) Token tên / mã (cần searchTokens — có sau khi lưu/import lại)
+  const tokens = nameQ
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter((t) => t.length >= 2)
+    .slice(0, 10);
+  if (tokens.length) {
+    try {
+      const snap = await db
+        .collection("students")
+        .where("searchTokens", "array-contains-any", tokens)
+        .limit(limit)
+        .get();
+      for (const doc of snap.docs) {
+        pushDoc(doc.id, doc.data() as Student);
+      }
+    } catch {
+      // Index chưa sẵn / field chưa có — bỏ qua, thử prefix bên dưới
+    }
+  }
+  if (matches.length >= limit) return matches;
+
+  // 4) Prefix họ tên (dữ liệu thường viết HOA)
+  if (nameUpper.length >= 2) {
+    try {
+      const snap = await db
+        .collection("students")
+        .where("hoVaTen", ">=", nameUpper)
+        .where("hoVaTen", "<=", nameUpper + "\uf8ff")
+        .limit(limit)
+        .get();
+      for (const doc of snap.docs) {
+        pushDoc(doc.id, doc.data() as Student);
+      }
+    } catch {
+      // Có thể cần composite index — bỏ qua
+    }
+  }
+
+  if (matches.length >= limit) return matches;
+
+  // 5) Prefix trên hoVaTenLower (sau khi đã backfill)
+  if (nameQ.length >= 2) {
+    try {
+      const snap = await db
+        .collection("students")
+        .where("hoVaTenLower", ">=", nameQ)
+        .where("hoVaTenLower", "<=", nameQ + "\uf8ff")
+        .limit(limit)
+        .get();
+      for (const doc of snap.docs) {
+        pushDoc(doc.id, doc.data() as Student);
+      }
+    } catch {
+      // ignore
     }
   }
 
@@ -233,8 +349,10 @@ export async function getStudent(maSinhVien: string): Promise<Student | null> {
 export async function upsertStudent(student: Student) {
   const db = getDb();
   const now = new Date().toISOString();
+  const searchMeta = buildSearchMeta(student);
   const payload = stripUndefined({
     ...student,
+    ...searchMeta,
     maSinhVien: student.maSinhVien,
     hoVaTen: student.hoVaTen || "",
     documents: student.documents || emptyDocuments(),
@@ -244,6 +362,35 @@ export async function upsertStudent(student: Student) {
   await db.collection("students").doc(student.maSinhVien).set(payload, {
     merge: true,
   });
+  invalidateStudentCache();
+}
+
+/** Ghi nhiều SV trong batch (tối đa 400 / lần) để giảm round-trip & đỡ cháy quota. */
+export async function upsertStudentsBatch(students: Student[]) {
+  if (!students.length) return;
+  const db = getDb();
+  const now = new Date().toISOString();
+  const CHUNK = 400;
+  for (let i = 0; i < students.length; i += CHUNK) {
+    const chunk = students.slice(i, i + CHUNK);
+    const batch = db.batch();
+    for (const student of chunk) {
+      const searchMeta = buildSearchMeta(student);
+      const payload = stripUndefined({
+        ...student,
+        ...searchMeta,
+        maSinhVien: student.maSinhVien,
+        hoVaTen: student.hoVaTen || "",
+        documents: student.documents || emptyDocuments(),
+        updatedAt: now,
+        createdAt: student.createdAt || now,
+      });
+      batch.set(db.collection("students").doc(student.maSinhVien), payload, {
+        merge: true,
+      });
+    }
+    await batch.commit();
+  }
   invalidateStudentCache();
 }
 

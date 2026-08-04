@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/session";
-import { getStudent, listPendingRequests, toIdentity } from "@/lib/students-repo";
+import {
+  firestoreUserMessage,
+  getStudent,
+  listPendingRequests,
+  toIdentity,
+} from "@/lib/students-repo";
 
 export async function GET() {
   try {
@@ -11,8 +16,10 @@ export async function GET() {
     const requests = await listPendingRequests();
     requests.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
 
+    // Giới hạn enrich để tránh N+1 đọc quá nhiều khi quota thấp
+    const capped = requests.slice(0, 100);
     const enriched = await Promise.all(
-      requests.map(async (r) => {
+      capped.map(async (r) => {
         const student = await getStudent(r.maSinhVien);
         return {
           ...r,
@@ -31,7 +38,6 @@ export async function GET() {
 
     return NextResponse.json({ requests: enriched });
   } catch (e) {
-    const message = e instanceof Error ? e.message : "Lỗi máy chủ";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: firestoreUserMessage(e) }, { status: 500 });
   }
 }

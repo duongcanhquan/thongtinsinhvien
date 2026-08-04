@@ -17,11 +17,21 @@ export function invalidateStudentCache() {
 
 export function isQuotaExceededError(e: unknown): boolean {
   const msg = e instanceof Error ? e.message : String(e || "");
-  return /RESOURCE_EXHAUSTED|Quota exceeded|exceeded your .*quota/i.test(msg);
+  const code =
+    typeof e === "object" && e && "code" in e
+      ? String((e as { code?: unknown }).code ?? "")
+      : "";
+  return (
+    /RESOURCE_EXHAUSTED|Quota Exceeded|quota exceeded|exceeded your .*quota/i.test(
+      msg
+    ) ||
+    code === "8" ||
+    code === "resource-exhausted"
+  );
 }
 
 export function quotaExceededMessage() {
-  return "Hệ thống đang quá tải (hết hạn mức dữ liệu). Vui lòng thử lại sau vài phút.";
+  return "Firestore đã hết hạn mức miễn phí trong ngày (đọc/ghi). Thử lại sau khi quota reset (khoảng 0h giờ Mỹ ≈ 14–15h VN) hoặc bật Blaze/Billing trên Firebase Console.";
 }
 
 /** Full student list cached in-memory per serverless instance. */
